@@ -1,0 +1,10 @@
+# Project place file
+/voxel-terrain.rbxlx
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+#Packages
+Packages
+ServerPackages
