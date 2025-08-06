@@ -64,15 +64,6 @@ local function getVertexPositionSmooth(v: number, cornerBuffer: { number }): Vec
 	return vPos
 end
 
-local function getVertexPosition(v: number): Vector3
-	local lowEndpoint: number = bit32.rshift(bit32.band(v, 0xF0), 4)
-	local highEndpoint: number = bit32.band(v, 0x0F)
-
-	local p0: Vector3 = CORNER_MASK[lowEndpoint]
-	local p1: Vector3 = CORNER_MASK[highEndpoint]
-	return (p0 + p1) / 2
-end
-
 function Renderer.new(voxelSize: number, renderAreaCFrame: CFrame, renderAreaDimensions: Vector3): Renderer
 	local self: Renderer = setmetatable({
 		VoxelSize = voxelSize,
@@ -104,16 +95,14 @@ function RendererInstance:Render()
 	print("Vertex Count:", vCount)
 	print("Triangle Count:", tCount)
 
-	if not self._meshPart then
-		local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self._mesh))
-		part.Anchored = true
-		part.Color = Color3.fromRGB(39, 128, 27)
-		part.CFrame = self.RenderAreaCFrame
-		part.Name = "TerrainRender"
-		part.Parent = workspace
-	else
-		self._meshPart.CFrame = self.RenderAreaCFrame
-	end
+	local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self._mesh), {})
+	part.Anchored = true
+	part.Color = Color3.fromRGB(39, 128, 27)
+	part.CFrame = self.RenderAreaCFrame
+	part.Name = "TerrainRender"
+	part.Parent = workspace
+	self._meshPart = part
+	print("Created mesh part")
 end
 
 function RendererInstance:_GetVertexId(voxel: Vector3, vertexPos: Vector3, vertex: number, cornerBuffer: { number }): number
@@ -167,8 +156,7 @@ function RendererInstance:_RenderVoxel(voxel: Vector3, cornerBuffer: { number })
 		local mask: Vector3 = CORNER_MASK[i]
 		local cornerPos: Vector3 = voxelPos + mask * self.VoxelSize / 2
 		cornerPos += self.RenderAreaCFrame.Position
-		local scaled: Vector3 = cornerPos  * 1/200
-		cornerBuffer[i] = math.noise(scaled.X, scaled.Y, scaled.Z)
+		cornerBuffer[i] = 200 - cornerPos.Magnitude
 	end
 
 	local caseCode: number = getCaseCode(cornerBuffer)
@@ -189,7 +177,7 @@ function RendererInstance:_RenderVoxel(voxel: Vector3, cornerBuffer: { number })
 		local vid2: number = self:_GetVertexId(voxel, v2Pos, v2, cornerBuffer)
 		local vid3: number = self:_GetVertexId(voxel, v3Pos, v3, cornerBuffer)
 
-		mesh:AddTriangle(vid1, vid2, vid3)
+		mesh:AddTriangle(vid3, vid2, vid1)
 		tCount += 1
 	end
 end
