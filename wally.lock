@@ -3,7 +3,7 @@
 registry = "test"
 
 [[package]]
-name = "dunngames/voxel-terrain"
+name = "elokore/voxel-terrain"
 version = "0.1.0"
 dependencies = [["Janitor", "howmanysmall/janitor@1.18.3"], ["Promise", "evaera/promise@4.0.0"], ["Signal", "stravant/goodsignal@0.2.1"], ["TableUtil", "sleitnick/table-util@1.2.1"], ["Cmdr", "evaera/cmdr@1.12.0"], ["ProfileStore", "lm-loleris/profilestore@1.0.3"]]
 
