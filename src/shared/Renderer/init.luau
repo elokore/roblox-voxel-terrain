@@ -96,8 +96,6 @@ function RendererInstance:GetNearestVoxel(globalPosition: vector, lod: number): 
     local voxelSize: number = self._voxelSizes[lod]
 
     local voxel: vector = vector.floor((relativePos / voxelSize))
-    local min: vector, max: vector = self.GeometryContainer:GetCoordinateRange(lod)
-    voxel = vector.clamp(voxel, min, max)
 
     return voxel
 end
@@ -120,7 +118,7 @@ function RendererInstance:GetVertexId(voxel: vector, lod: number, vertexPos: vec
     -- And it lies on a corner other than corner 7, then invert the direction code
     -- to find the voxel that owns the vertex
     if zeroCornerIndex >= 0 and zeroCornerIndex ~= 7 then
-        directionCode = bit32.bxor(directionCode)
+        directionCode = bit32.bxor(directionCode, 7)
         reuseIndex = 0
     end
 
@@ -149,14 +147,15 @@ end
 ]=]
 function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: { number })
     local mesh: EditableMesh = self._mesh
-    local voxelPos: vector = voxel * self.VoxelSize
-    local halfSize: number = self.VoxelSize / 2
+    local voxelSize: number = self._voxelSizes[lod]
+    local halfSize: number = voxelSize / 2
+    local voxelPos: vector = voxel * voxelSize
     local renderAreaPos: vector =
         vector.create(self.RenderAreaCFrame.Position.X, self.RenderAreaCFrame.Position.Y, self.RenderAreaCFrame.Position.Z)
 
     for i: number = 0, 7 do
         local mask: vector = CORNER_MASK[i]
-        local cornerPos: vector = voxelPos + mask * self.VoxelSize / 2
+        local cornerPos: vector = voxelPos + mask * halfSize
 
         cornerPos += renderAreaPos
         cornerBuffer[i] = 200 - vector.magnitude(cornerPos)
@@ -183,6 +182,17 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: 
         mesh:AddTriangle(vid3, vid2, vid1)
         tCount += 1
     end
+
+    -- if #cellData.vertexIndex > 0 then
+    --     local v: Part = Instance.new("Part")
+    --     v.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
+    --     v.CFrame = self.RenderAreaCFrame * CFrame.new(Vector3.new(voxel.x, voxel.y, voxel.z) * voxelSize)
+    --     v.Name = tostring(voxel)
+    --     v.Anchored = true
+    --     v.CanCollide = false
+    --     v.Transparency = 0.5
+    --     v.Parent = workspace
+    -- end
 end
 
 return Renderer
