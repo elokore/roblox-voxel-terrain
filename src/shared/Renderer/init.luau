@@ -16,6 +16,7 @@ type RendererMeta = {
     RenderVoxel: (self: Renderer, voxel: vector, lod: number, cornerBuffer: { number }) -> (),
     GetVertexId: (self: Renderer, voxel: vector, lod: number, vertexPos: vector, vertex: number, cornerBuffer: { number }) -> number,
     GetNearestVoxel: (self: Renderer, globalPosition: vector, lod: number) -> vector,
+    RenderAtLocation: (self: Renderer, position: vector) -> (),
 }
 
 export type Renderer = typeof(setmetatable(
@@ -31,6 +32,7 @@ export type Renderer = typeof(setmetatable(
 ))
 
 -- < Variables > --
+local CHUNK_SIZE: number = 15
 local CORNER_MASK: { vector } = TriTables.cornerMask
 local Renderer = {}
 local RendererInstance = {}
@@ -143,7 +145,7 @@ end
 
 --[=[
     @param voxel vector -- The location of the voxel grid position within the specified LOD
-    @param lod number -- 
+    @param lod number -- The level of detail of the voxel
 ]=]
 function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: { number })
     local mesh: EditableMesh = self._mesh
@@ -179,7 +181,9 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: 
         local vid2: number = self:GetVertexId(voxel, lod, v2Pos, v2, cornerBuffer)
         local vid3: number = self:GetVertexId(voxel, lod, v3Pos, v3, cornerBuffer)
 
-        mesh:AddTriangle(vid3, vid2, vid1)
+        local faceId: number = mesh:AddTriangle(vid3, vid2, vid1)
+        self.GeometryContainer:StoreFaceId(faceId, voxel, lod)
+
         tCount += 1
     end
 
@@ -193,6 +197,44 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: 
     --     v.Transparency = 0.5
     --     v.Parent = workspace
     -- end
+end
+
+function RendererInstance:RenderAtLocation(position: vector)
+    local lod: number = 4
+    local posOnPlanet: vector = (position / vector.magnitude(position)) * 200
+    local targetVoxel: vector = self:GetNearestVoxel(posOnPlanet, lod)
+
+    --Unrender previous voxels that are now out of bounds
+    for voxel: vector, faces: { number } in self.GeometryContainer._faceStorage[lod] do
+        local dist: vector = vector.abs(targetVoxel - voxel)
+        local inBounds: boolean = dist.x <= CHUNK_SIZE and dist.y <= CHUNK_SIZE and dist.z <= CHUNK_SIZE
+        if inBounds then continue end
+
+        for _, faceId: number in faces do
+            self._mesh:RemoveFace(faceId)
+        end
+
+        self.GeometryContainer:RemoveFaces(voxel, lod)
+    end
+
+    local cornerBuffer: { number } = {}
+
+    for y = -CHUNK_SIZE, CHUNK_SIZE do
+        for z = CHUNK_SIZE, -CHUNK_SIZE, -1 do
+            for x = -CHUNK_SIZE, CHUNK_SIZE do
+                local v: vector = targetVoxel + vector.create(x, y, z)
+                if self.GeometryContainer._faceStorage[lod][v] then continue end
+                self:RenderVoxel(v, lod, cornerBuffer)
+            end
+        end
+    end
+
+    if not self._meshPart then
+        local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self._mesh))
+        part.Anchored = true
+        part.Parent = workspace
+        self._meshPart = part
+    end
 end
 
 return Renderer

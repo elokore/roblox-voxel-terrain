@@ -33,15 +33,10 @@
 -- Converted to Luau format by Elocore 8/4/2022
 --================================================================================
 --stylua: ignore start
-type CellDataMeta = {
-	__index: CellDataMeta,
-	GetVertexCount: (self: CellData) -> (number),
-	GetTriangleCount: (self: CellData) -> (number)
-}
-export type CellData = typeof(setmetatable({} :: {
+export type CellData = {
 	geometryCounts: number,
 	vertexIndex: { [number]: number },
-}, {} :: CellDataMeta))
+}
 
 local CellData = {}
 CellData.__index = CellData
@@ -50,26 +45,10 @@ CellData.__index = CellData
 	Stores information for a regular equivalence class
 ]]
 function CellData.new(geometryCounts: number, vertexIndex: { [number]: number }) : CellData
-	local self = setmetatable({
+	return {
 		geometryCounts = geometryCounts, -- High nibble is vertex count, low nibble is triangle count.
 		vertexIndex = vertexIndex -- Groups of 3 indexes giving the triangulation.
-	}, CellData) :: CellData      
-	
-	return self
-end
-
---[[
-	Gets how many vertices are in an equivalence class
-]]
-function CellData:GetVertexCount() : number
-	return bit32.rshift(self.geometryCounts, 4)
-end
-
---[[
-	Gets how many triangles will be used in this equivalence class
-]]
-function CellData:GetTriangleCount() : number
-	return bit32.band(self.geometryCounts, 0x0F)
+	}
 end
 
 -- The regularCellClass table maps an 8-bit regular Marching Cubes case index to

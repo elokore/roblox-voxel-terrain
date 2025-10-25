@@ -8,12 +8,15 @@ type GeometryContainerMeta = {
     GetVertexId: (self: GeometryContainer, vertexLocation: number, voxelPos: vector, lod: number) -> number?,
     StoreVertexId: (self: GeometryContainer, vertexId: number, vertexLocation: number, voxelPos: vector, lod: number) -> (),
     RemoveVertexId: (self: GeometryContainer, vertexLocation: number, voxelPos: vector, lod: number) -> (),
+    StoreFaceId: (self: GeometryContainer, faceId: number, voxel: vector, lod: number) -> (),
+    RemoveFaces: (self: GeometryContainer, voxel: vector, lod: number) -> (),
 }
 
 export type GeometryContainer = typeof(setmetatable(
     {} :: {
         LevelsOfDetail: number,
         _vertexStorage: { [number]: { [vector]: { number } } },
+        _faceStorage: { [number]: { [vector]: { number } } },
     },
     {} :: GeometryContainerMeta
 ))
@@ -32,10 +35,12 @@ function GeometryContainer.new(levelsOfDetail: number): GeometryContainer
     local self: GeometryContainer = setmetatable({
         LevelsOfDetail = levelsOfDetail,
         _vertexStorage = {},
+        _faceStorage = {},
     }, GeometryContainerInstance)
 
     for x = 1, levelsOfDetail do
         self._vertexStorage[x] = {}
+        self._faceStorage[x] = {}
     end
 
     return self
@@ -126,6 +131,17 @@ function GeometryContainerInstance:RemoveVertexId(vertexLocation: number, voxelP
         local areAllVerticesRemoved: boolean = not storage[0] and not storage[1] and not storage[2] and not storage[3]
         if areAllVerticesRemoved then self._vertexStorage[lod][voxelPos] = nil end
     end
+end
+
+function GeometryContainerInstance:StoreFaceId(faceId: number, voxelPos: vector, lod: number)
+    assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
+    if not self._faceStorage[lod][voxelPos] then self._faceStorage[lod][voxelPos] = {} end
+    table.insert(self._faceStorage[lod][voxelPos], faceId)
+end
+
+function GeometryContainerInstance:RemoveFaces(voxelPos: vector, lod: number)
+    assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
+    self._faceStorage[lod][voxelPos] = nil
 end
 
 return GeometryContainer

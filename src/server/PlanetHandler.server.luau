@@ -2,6 +2,7 @@
 -- < Services > --
 local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 -- < Imports > --
 local Renderer = require(ReplicatedStorage.Shared.Renderer)
@@ -20,29 +21,18 @@ agent.Size = Vector3.new(2, 2, 2)
 agent.BrickColor = BrickColor.Red()
 agent.Anchored = true
 agent.CanCollide = false
-agent.CFrame = CFrame.new(-205, 205, 0)
+agent.CFrame = CFrame.new(-205, 77.5, 0)
 agent.Parent = workspace
 
-local pos: vector = vector.create(agent.Position.X, agent.Position.Y, agent.Position.Z)
-local projectedPos: vector = (pos / vector.magnitude(pos)) * 200
+local lastPos: vector = vector.zero
 
-local closestVoxel: vector = renderer:GetNearestVoxel(projectedPos, 2)
-print(closestVoxel)
+while true do
+    task.wait(1)
+    local pos: vector = vector.create(agent.Position.X, agent.Position.Y, agent.Position.Z)
+    local dist: number = vector.magnitude(lastPos - pos)
 
-local cornerBuffer: { number } = {}
-for y = -CHUNK_SIZE, CHUNK_SIZE do
-    for z = CHUNK_SIZE, -CHUNK_SIZE, -1 do
-        for x = -CHUNK_SIZE, CHUNK_SIZE do
-            local v: vector = closestVoxel + vector.create(x, y, z)
-            renderer:RenderVoxel(v, 2, cornerBuffer)
-        end
+    if dist >= 5 then
+        lastPos = pos
+        renderer:RenderAtLocation(pos)
     end
 end
-
-local part = AssetService:CreateMeshPartAsync(Content.fromObject(renderer._mesh))
-part.Anchored = true
-part.Parent = workspace
-renderer._meshPart = part
-
-print("Vertices:", #renderer._mesh:GetVertices())
-print("Triangles:", #renderer._mesh:GetFaces())
