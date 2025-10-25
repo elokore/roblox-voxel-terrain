@@ -137,7 +137,7 @@ function RendererInstance:GetVertexId(voxel: vector, lod: number, vertexPos: vec
         return vid
     else
         local newVid: number = self._mesh:AddVertex(Vector3.new(vertexPos.x, vertexPos.y, vertexPos.z))
-        self.GeometryContainer:StoreVertexId(newVid, reuseIndex, voxel, lod)
+        self.GeometryContainer:StoreVertexId(newVid, reuseIndex, vertexOwnerVoxel, lod)
         vCount += 1
         return newVid
     end
