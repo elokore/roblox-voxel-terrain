@@ -10,13 +10,17 @@ type GeometryContainerMeta = {
     RemoveVertexId: (self: GeometryContainer, vertexLocation: number, voxelPos: vector, lod: number) -> (),
     StoreFaceId: (self: GeometryContainer, faceId: number, voxel: vector, lod: number) -> (),
     RemoveFaces: (self: GeometryContainer, voxel: vector, lod: number) -> (),
+    StoreCaseCode: (self: GeometryContainer, caseCode: number, voxel: vector, lod: number) -> (),
 }
 
 export type GeometryContainer = typeof(setmetatable(
     {} :: {
         LevelsOfDetail: number,
+        VertexCount: number,
+        FaceCount: number,
         _vertexStorage: { [number]: { [vector]: { number } } },
         _faceStorage: { [number]: { [vector]: { number } } },
+        _codeStorage: { [number]: { [vector]: number } },
     },
     {} :: GeometryContainerMeta
 ))
@@ -34,13 +38,17 @@ GeometryContainerInstance.__index = GeometryContainerInstance
 function GeometryContainer.new(levelsOfDetail: number): GeometryContainer
     local self: GeometryContainer = setmetatable({
         LevelsOfDetail = levelsOfDetail,
+        VertexCount = 0,
+        FaceCount = 0,
         _vertexStorage = {},
         _faceStorage = {},
+        _codeStorage = {},
     }, GeometryContainerInstance)
 
     for x = 1, levelsOfDetail do
         self._vertexStorage[x] = {}
         self._faceStorage[x] = {}
+        self._codeStorage[x] = {}
     end
 
     return self
@@ -98,6 +106,7 @@ function GeometryContainerInstance:StoreVertexId(vertexId: number, vertexLocatio
     assert(vertexLocation >= 0 and vertexLocation <= 3, "'vertexLocation' must be between 0 and 3")
     if not self._vertexStorage[lod][voxelPos] then self._vertexStorage[lod][voxelPos] = {} end
 
+    self.VertexCount += 1
     self._vertexStorage[lod][voxelPos][vertexLocation] = vertexId
 end
 
@@ -131,17 +140,27 @@ function GeometryContainerInstance:RemoveVertexId(vertexLocation: number, voxelP
         local areAllVerticesRemoved: boolean = not storage[0] and not storage[1] and not storage[2] and not storage[3]
         if areAllVerticesRemoved then self._vertexStorage[lod][voxelPos] = nil end
     end
+
+    self.VertexCount -= 1
 end
 
 function GeometryContainerInstance:StoreFaceId(faceId: number, voxelPos: vector, lod: number)
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
     if not self._faceStorage[lod][voxelPos] then self._faceStorage[lod][voxelPos] = {} end
     table.insert(self._faceStorage[lod][voxelPos], faceId)
+    self.FaceCount += 1
 end
 
 function GeometryContainerInstance:RemoveFaces(voxelPos: vector, lod: number)
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
+    local faceCountInVoxel: number = #self._faceStorage[lod][voxelPos]
+    self.FaceCount -= faceCountInVoxel
     self._faceStorage[lod][voxelPos] = nil
+end
+
+function GeometryContainerInstance:StoreCaseCode(caseCode: number, voxel: vector, lod: number)
+    assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
+    self._codeStorage[lod][voxel] = caseCode
 end
 
 return GeometryContainer

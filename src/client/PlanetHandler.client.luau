@@ -1,6 +1,5 @@
 --!strict
 -- < Services > --
-local AssetService = game:GetService("AssetService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -12,7 +11,6 @@ type Renderer = Renderer.Renderer
 
 -- < Variables > --
 local LOD: number = 5
-local CHUNK_SIZE: number = 15
 local renderer: Renderer = Renderer.new(5, LOD, CFrame.new())
 
 local agent: Part = Instance.new("Part")
@@ -26,13 +24,13 @@ agent.Parent = workspace
 
 local lastPos: vector = vector.zero
 
-while true do
-    task.wait(1)
-    local pos: vector = vector.create(agent.Position.X, agent.Position.Y, agent.Position.Z)
+RunService.Heartbeat:Connect(function()
+    local camera: Camera = workspace.CurrentCamera
+    local pos: vector = vector.create(camera.CFrame.X, camera.CFrame.Y, camera.CFrame.Z)
     local dist: number = vector.magnitude(lastPos - pos)
 
-    if dist >= 5 then
-        lastPos = pos
-        renderer:RenderAtLocation(pos)
+    if dist >= 1 then
+        local success: boolean = renderer:RenderAtLocation(pos)
+        if success then lastPos = pos end
     end
-end
+end)
