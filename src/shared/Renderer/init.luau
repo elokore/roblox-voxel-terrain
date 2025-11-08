@@ -14,34 +14,41 @@ type GeometryContainer = GeometryContainer.GeometryContainer
 
 type RendererMeta = {
     __index: RendererMeta,
-    RenderVoxel: (self: Renderer, voxel: vector, lod: number, cornerBuffer: { number }) -> (),
+    RenderVoxel: (self: Renderer, voxel: vector, lod: number, cornerBuffer: { number }) -> number,
     GetVertexId: (self: Renderer, voxel: vector, lod: number, vertexPos: vector, vertex: number, cornerBuffer: { number }) -> number,
     GetNearestVoxel: (self: Renderer, globalPosition: vector, lod: number) -> vector,
     RenderAtLocation: (self: Renderer, position: vector) -> boolean,
 }
 
-export type RenderState = "Idle" | "Cleanup" | "Rendering"
+export type RenderState = "Idle" | "Recycling" | "Rendering" | "Processing"
 export type Renderer = typeof(setmetatable(
     {} :: {
         VoxelSize: number,
         RenderAreaCFrame: CFrame,
         GeometryContainer: GeometryContainer,
         State: RenderState,
+        TargetVoxel: vector,
+        TargetLod: number,
         _voxelsToCleanup: { [number]: { vector } },
         _voxelsToRender: { [number]: { vector } },
+        _recycleVertices: { number },
         _mesh: EditableMesh,
         _meshPart: MeshPart?,
         _voxelSizes: { number },
         _renderStep: RBXScriptConnection,
+        _processX: number,
+        _processY: number,
+        _processZ: number,
     },
     {} :: RendererMeta
 ))
 
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
-local CHUNK_SIZE: number = 16
-local VOXEL_CLEANUP_PER_FRAME: number = 50
-local VOXELS_RENDER_PER_FRAME: number = 200
+local CHUNK_SIZE: number = 20
+local VOXEL_CLEANUP_PER_FRAME: number = 500
+local VOXELS_RENDER_PER_FRAME: number = 500
+local VOXELS_PROCESS_PER_FRAME: number = 10000
 local CORNER_MASK: { vector } = TriTables.cornerMask
 local Renderer = {}
 local RendererInstance = {}
@@ -117,7 +124,7 @@ local function getDirectionForVertexOwner(vertex: number, cornerBuffer: { number
     return direction, reuseIndex
 end
 
-local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, mesh: EditableMesh)
+local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, mesh: EditableMesh, recycleVerts: { number })
     local faceList: { number }? = geo._faceStorage[lod][voxel]
     if not faceList then return end
 
@@ -128,7 +135,6 @@ local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, 
 
     for i: number, faceId: number in faceList do
         mesh:RemoveFace(faceId)
-        local removedIds: { number } = mesh:RemoveUnused()
 
         local tIndex: number = 1 + (i - 1) * 3
         local v1: number = vertexData[cellData.vertexIndex[tIndex]]
@@ -143,18 +149,23 @@ local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, 
         local v2Voxel: vector = voxel + v2Dir
         local v3Voxel: vector = voxel + v3Dir
 
-        local v1ID: number = geo._vertexStorage[lod][v1Voxel][v1Index]
-        local v2ID: number = geo._vertexStorage[lod][v2Voxel][v2Index]
-        local v3ID: number = geo._vertexStorage[lod][v3Voxel][v3Index]
+        local v1ID: number = if geo._vertexStorage[lod][v1Voxel] then geo._vertexStorage[lod][v1Voxel][v1Index] else 0
+        local v2ID: number = if geo._vertexStorage[lod][v2Voxel] then geo._vertexStorage[lod][v2Voxel][v2Index] else 0
+        local v3ID: number = if geo._vertexStorage[lod][v3Voxel] then geo._vertexStorage[lod][v3Voxel][v3Index] else 0
 
-        for _, removedID: number in removedIds do
-            if removedID == v1ID then
-                geo:RemoveVertexId(v1Index, v1Voxel, lod)
-            elseif removedID == v2ID then
-                geo:RemoveVertexId(v2Index, v2Voxel, lod)
-            elseif removedID == v3ID then
-                geo:RemoveVertexId(v3Index, v3Voxel, lod)
-            end
+        if v1ID and v1ID ~= 0 and #mesh:GetVertexFaces(v1ID) == 0 then
+            geo:RemoveVertexId(v1Index, v1Voxel, lod)
+            table.insert(recycleVerts, v1ID)
+        end
+
+        if v2ID and v2ID ~= 0 and #mesh:GetVertexFaces(v2ID) == 0 then
+            geo:RemoveVertexId(v2Index, v2Voxel, lod)
+            table.insert(recycleVerts, v2ID)
+        end
+
+        if v3ID and v3ID ~= 0 and #mesh:GetVertexFaces(v3ID) == 0 then
+            geo:RemoveVertexId(v3Index, v3Voxel, lod)
+            table.insert(recycleVerts, v3ID)
         end
     end
 
@@ -178,26 +189,91 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
         RenderAreaCFrame = renderAreaCFrame,
         GeometryContainer = GeometryContainer.new(highestLOD),
         State = "Idle" :: RenderState,
+        TargetVoxel = vector.zero,
+        TargetLod = 0,
         _voxelsToCleanup = voxelsToCleanup,
         _voxelsToRender = voxelsToRender,
+        _recycleVertices = {},
         _mesh = AssetService:CreateEditableMesh(),
         _voxelSizes = voxelSizes,
         _meshPart = nil,
         _renderStep = renderStep,
+        _processX = 0,
+        _processY = 0,
+        _processZ = 0,
     }, RendererInstance)
 
     local cornerBuffer: { number } = {}
-    renderStep = RunService.PreRender:Connect(function(dt: number)
+    renderStep = RunService.Heartbeat:Connect(function(dt: number)
         local count: number = 0
 
+        if self.State == "Processing" then
+            debug.profilebegin("Processing")
+            local processCount: number = 0
+            local resumeX: number = self._processX
+            local resumeY: number = self._processY
+            local resumeZ: number = self._processZ
+            local renderAreaPos: vector = vector.create(self.RenderAreaCFrame.X, self.RenderAreaCFrame.Y, self.RenderAreaCFrame.Z)
+            local voxelSize: number = self._voxelSizes[self.TargetLod]
+            local halfSize: number = voxelSize / 2
+            local isResuming: boolean = true
+
+            for y = resumeY, CHUNK_SIZE do
+                self._processY = y
+                local zStart: number = if isResuming then resumeZ else CHUNK_SIZE
+
+                for z = zStart, -CHUNK_SIZE, -1 do
+                    self._processZ = z
+                    local xStart: number = if isResuming then resumeX else -CHUNK_SIZE
+                    isResuming = false
+
+                    for x = xStart, CHUNK_SIZE do
+                        self._processX = x + 1
+                        processCount += 1
+
+                        local v: vector = self.TargetVoxel + vector.create(x, y, z)
+                        if self.GeometryContainer._faceStorage[self.TargetLod][v] then
+                            if processCount >= VOXELS_PROCESS_PER_FRAME then
+                                debug.profileend()
+                                return
+                            end
+                            continue
+                        end
+
+                        local voxelPos: vector = v * voxelSize
+                        for i: number = 0, 7 do
+                            local mask: vector = CORNER_MASK[i]
+                            local cornerPos: vector = voxelPos + mask * halfSize
+
+                            cornerPos += renderAreaPos
+                            cornerBuffer[i] = PLANET_RADIUS - vector.magnitude(cornerPos)
+                        end
+
+                        local caseCode: number = getCaseCode(cornerBuffer)
+                        if caseCode ~= 0 and caseCode ~= 255 then table.insert(self._voxelsToRender[self.TargetLod], v) end
+
+                        if processCount >= VOXELS_PROCESS_PER_FRAME then
+                            debug.profileend()
+                            return
+                        end
+                    end
+                end
+            end
+
+            debug.profileend()
+            self.State = "Recycling"
+        end
+
         -- Voxel cleanup
-        if self.State == "Rendering" then
-            debug.profilebegin("Voxel Cleanup")
+        if self.State == "Recycling" then
+            debug.profilebegin("Recycling")
+            local isEmpty: boolean = true
 
             for lod: number, voxelList: { vector } in voxelsToCleanup do
                 for i: number = #voxelList, 1, -1 do
+                    isEmpty = false
                     local voxel: vector = voxelList[i]
-                    cleanupVoxel(voxel, lod, self.GeometryContainer, self._mesh)
+                    cleanupVoxel(voxel, lod, self.GeometryContainer, self._mesh, self._recycleVertices)
                     table.remove(voxelList, i)
                     count += 1
 
@@ -207,10 +283,12 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
                 if count >= VOXEL_CLEANUP_PER_FRAME then break end
             end
 
+            if isEmpty then self.State = "Rendering" end
             debug.profileend()
+        end
 
-            -- Render new voxels
-
+        -- Render new voxels
+        if self.State == "Rendering" then
             debug.profilebegin("Voxel Rendering")
             local renderIsEmpty: boolean = true
             count = 0
@@ -231,6 +309,9 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
 
             if renderIsEmpty then
                 self.State = "Idle"
+                self._mesh:RemoveUnused()
+                table.clear(self._recycleVertices)
+
                 if not self._meshPart and self.GeometryContainer.FaceCount > 0 then
                     task.defer(function()
                         local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self._mesh))
@@ -266,7 +347,17 @@ function RendererInstance:GetVertexId(voxel: vector, lod: number, vertexPos: vec
     if vid then
         return vid
     else
-        local newVid: number = self._mesh:AddVertex(Vector3.new(vertexPos.x, vertexPos.y, vertexPos.z))
+        local newVid: number = 0
+        local recycleBinSize: number = #self._recycleVertices
+
+        if recycleBinSize > 0 then
+            newVid = self._recycleVertices[recycleBinSize]
+            self._mesh:SetPosition(newVid, Vector3.new(vertexPos.x, vertexPos.y, vertexPos.z))
+            table.remove(self._recycleVertices, recycleBinSize)
+        else
+            newVid = self._mesh:AddVertex(Vector3.new(vertexPos.x, vertexPos.y, vertexPos.z))
+        end
+
         self.GeometryContainer:StoreVertexId(newVid, reuseIndex, vertexOwnerVoxel, lod)
         return newVid
     end
@@ -276,7 +367,7 @@ end
     @param voxel vector -- The location of the voxel grid position within the specified LOD
     @param lod number -- The level of detail of the voxel
 ]=]
-function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: { number })
+function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: { number }): number
     local mesh: EditableMesh = self._mesh
     local voxelSize: number = self._voxelSizes[lod]
     local halfSize: number = voxelSize / 2
@@ -315,6 +406,8 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: 
         local faceId: number = mesh:AddTriangle(vid3, vid2, vid1)
         self.GeometryContainer:StoreFaceId(faceId, voxel, lod)
     end
+
+    return caseCode
 end
 
 function RendererInstance:RenderAtLocation(position: vector): boolean
@@ -323,6 +416,7 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     local lod: number = 5
     local posOnPlanet: vector = (position / vector.magnitude(position)) * PLANET_RADIUS
     local targetVoxel: vector = self:GetNearestVoxel(posOnPlanet, lod)
+    print("Target Voxel:", targetVoxel)
 
     --Find voxels we can cleanup
     for voxel: vector, faces: { number } in self.GeometryContainer._faceStorage[lod] do
@@ -333,18 +427,14 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
         table.insert(self._voxelsToCleanup[lod], voxel)
     end
 
-    for y = -CHUNK_SIZE, CHUNK_SIZE do
-        for z = CHUNK_SIZE, -CHUNK_SIZE, -1 do
-            for x = -CHUNK_SIZE, CHUNK_SIZE do
-                local v: vector = targetVoxel + vector.create(x, y, z)
-                if self.GeometryContainer._faceStorage[lod][v] then continue end
+    self._processX = -CHUNK_SIZE
+    self._processY = -CHUNK_SIZE
+    self._processZ = CHUNK_SIZE
 
-                table.insert(self._voxelsToRender[lod], v)
-            end
-        end
-    end
+    self.TargetVoxel = targetVoxel
+    self.TargetLod = lod
 
-    self.State = "Rendering"
+    self.State = "Processing"
     return true
 end
 

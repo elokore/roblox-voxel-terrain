@@ -19,7 +19,7 @@ agent.Size = Vector3.new(2, 2, 2)
 agent.BrickColor = BrickColor.Red()
 agent.Anchored = true
 agent.CanCollide = false
-agent.CFrame = CFrame.new(0, 205, 0)
+agent.CFrame = CFrame.new(0, 20005, 0)
 agent.Parent = workspace
 
 local lastPos: vector = vector.zero
