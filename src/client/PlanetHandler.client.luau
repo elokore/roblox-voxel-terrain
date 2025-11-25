@@ -10,8 +10,10 @@ local Renderer = require(ReplicatedStorage.Shared.Renderer)
 type Renderer = Renderer.Renderer
 
 -- < Variables > --
-local LOD: number = 5
+local LOD: number = 10
 local renderer: Renderer = Renderer.new(5, LOD, CFrame.new())
+
+print("Renderer")
 
 local agent: Part = Instance.new("Part")
 agent.Name = "Agent"
@@ -23,8 +25,13 @@ agent.CFrame = CFrame.new(0, 20005, 0)
 agent.Parent = workspace
 
 local lastPos: vector = vector.zero
+local cf = CFrame.lookAlong(Vector3.zero, -Vector3.yAxis)
 
-RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(dt)
+    -- cf *= CFrame.Angles(math.rad(5) * dt, 0, 0)
+    -- agent.CFrame = cf * CFrame.new(0, 0, 20005)
+    --local pos: vector = vector.create(agent.CFrame.X, agent.CFrame.Y, agent.CFrame.Z)
+
     local camera: Camera = workspace.CurrentCamera
     local pos: vector = vector.create(camera.CFrame.X, camera.CFrame.Y, camera.CFrame.Z)
     local dist: number = vector.magnitude(lastPos - pos)
