@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 -- < Imports > --
 local TriTables = require(script.Triangulations)
 local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
+local BinaryArray = require(ReplicatedStorage.Shared.BinaryArray)
 
 -- < Types > --
 type CellData = TriTables.CellData
@@ -54,8 +55,8 @@ export type Renderer = typeof(setmetatable(
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
 local RENDER_RADIUS: number = 500
-local VOXEL_CLEANUP_PER_FRAME: number = 250
-local VOXELS_RENDER_PER_FRAME: number = 250
+local VOXEL_CLEANUP_PER_FRAME: number = 500
+local VOXELS_RENDER_PER_FRAME: number = 500
 local VOXELS_PROCESS_PER_FRAME: number = 5000
 local SUBDIVIDE_VOXEL_DIST: number = 12
 local CORNER_MASK: { vector } = TriTables.cornerMask
@@ -431,13 +432,13 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
 
                     if count >= VOXEL_CLEANUP_PER_FRAME then
                         debug.profileend()
-                        break
+                        return
                     end
                 end
 
                 if count >= VOXEL_CLEANUP_PER_FRAME then
                     debug.profileend()
-                    break
+                    return
                 end
             end
 
@@ -446,7 +447,7 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
         end
 
         -- Render new voxels
-        if self.State == "Rendering" or self.State == "Recycling" then
+        if self.State == "Rendering" then
             debug.profilebegin("Voxel Rendering")
             local renderIsEmpty: boolean = true
             count = 0
@@ -656,6 +657,7 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     local renderAreaPos: vector = vector.create(self.RenderAreaCFrame.X, self.RenderAreaCFrame.Y, self.RenderAreaCFrame.Z)
 
     print("RenderMin:", renderMin, "RenderMax", renderMax)
+    local cleanCount: number = 0
 
     --Find voxels we can cleanup for all relevant LODs
     for lod: number = startingLOD, 10 do
@@ -666,6 +668,10 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
         if lod ~= startingLOD then
             thisLodMin = self.GeometryContainer:GetHighLodVoxelPos(renderMin, lod - startingLOD)
             thisLodMax = self.GeometryContainer:GetHighLodVoxelPos(renderMax, lod - startingLOD)
+        end
+
+        local function voxelEval(v: vector): number
+            return getVoxelID(v, lod)
         end
 
         for voxel: vector, faces: { number } in self.GeometryContainer._faceStorage[lod] do
@@ -682,9 +688,15 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
             local canBeSubdivided: boolean = canSubdivide(voxel, voxelSize, renderAreaPos, lod, 10, posOnPlanet)
             local shouldCleanup: boolean = not inBounds or canBeSubdivided or not canParentSubdivide
 
-            if shouldCleanup then table.insert(self._voxelsToCleanup[lod], voxel) end
+            if shouldCleanup then
+                BinaryArray.BinaryInsert(self._voxelsToCleanup[lod], voxel, voxelEval)
+                cleanCount += 1
+                --table.insert(self._voxelsToCleanup[lod], voxel)
+            end
         end
     end
+
+    print("VoxelsToClean:", cleanCount)
 
     self._processX = renderMin.x
     self._processY = renderMin.y
