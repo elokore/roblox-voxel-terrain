@@ -14,7 +14,7 @@ type GeometryContainer = GeometryContainer.GeometryContainer
 
 type RendererMeta = {
     __index: RendererMeta,
-    RenderVoxel: (self: Renderer, voxel: vector, lod: number, cornerBuffer: { number }) -> number,
+    RenderVoxel: (self: Renderer, voxel: vector, lod: number) -> number,
     GetVertexId: (self: Renderer, voxel: vector, lod: number, vertexPos: vector, vertex: number, cornerBuffer: { number }) -> number,
     GetNearestVoxel: (self: Renderer, globalPosition: vector, lod: number) -> vector,
     GetRenderAreaBoundingBox: (self: Renderer, areaCenter: vector, lod: number) -> (vector, vector),
@@ -35,6 +35,9 @@ export type Renderer = typeof(setmetatable(
         _processBackIndex: number,
         _voxelsToProcess: { number },
         _voxelsToCleanup: { [number]: { vector } },
+        _renderListFront: number,
+        _renderListBack: number,
+        _renderListLod: number,
         _voxelsToRender: { [number]: { vector } },
         _recycleVertices: { number },
         _mesh: EditableMesh,
@@ -50,9 +53,9 @@ export type Renderer = typeof(setmetatable(
 
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 700
-local VOXEL_CLEANUP_PER_FRAME: number = 500
-local VOXELS_RENDER_PER_FRAME: number = 500
+local RENDER_RADIUS: number = 500
+local VOXEL_CLEANUP_PER_FRAME: number = 250
+local VOXELS_RENDER_PER_FRAME: number = 250
 local VOXELS_PROCESS_PER_FRAME: number = 5000
 local SUBDIVIDE_VOXEL_DIST: number = 12
 local CORNER_MASK: { vector } = TriTables.cornerMask
@@ -177,7 +180,32 @@ local function getDirectionForVertexOwner(vertex: number, cornerBuffer: { number
     return direction, reuseIndex
 end
 
-local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, mesh: EditableMesh, recycleVerts: { number })
+local sampleCornerBuffer: { number } = {}
+
+local function sampleVoxelCorners(voxel: vector, voxelSize: number, renderAreaPos: vector): { number }
+    local voxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
+    local halfSize: number = voxelSize / 2
+
+    for i: number = 0, 7 do
+        local mask: vector = CORNER_MASK[i]
+        local cornerPos: vector = voxelPos + mask * halfSize
+        local scaledPos: vector = cornerPos * 1 / 200
+
+        sampleCornerBuffer[i] = PLANET_RADIUS - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 50
+    end
+
+    return sampleCornerBuffer
+end
+
+local function cleanupVoxel(
+    voxel: vector,
+    lod: number,
+    voxelSize: number,
+    renderAreaPos: vector,
+    geo: GeometryContainer,
+    mesh: EditableMesh,
+    recycleVerts: { number }
+)
     local faceList: { number }? = geo._faceStorage[lod][voxel]
     if not faceList then return end
 
@@ -185,6 +213,7 @@ local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, 
     local cellClass: number = TriTables.regularCellClass[caseCode]
     local cellData: CellData = TriTables.regularCellData[cellClass]
     local vertexData: { number } = TriTables.regularVertexData[caseCode]
+    local cornerSamples: { number } = sampleVoxelCorners(voxel, voxelSize, renderAreaPos)
 
     for i: number, faceId: number in faceList do
         mesh:RemoveFace(faceId)
@@ -194,29 +223,33 @@ local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, 
         local v2: number = vertexData[cellData.vertexIndex[tIndex + 1]]
         local v3: number = vertexData[cellData.vertexIndex[tIndex + 2]]
 
-        local v1Dir: vector, v1Index: number = getDirectionForVertexOwner(v1)
-        local v2Dir: vector, v2Index: number = getDirectionForVertexOwner(v2)
-        local v3Dir: vector, v3Index: number = getDirectionForVertexOwner(v3)
+        local v1Dir: vector, v1Index: number = getDirectionForVertexOwner(v1, cornerSamples)
+        local v2Dir: vector, v2Index: number = getDirectionForVertexOwner(v2, cornerSamples)
+        local v3Dir: vector, v3Index: number = getDirectionForVertexOwner(v3, cornerSamples)
 
         local v1Voxel: vector = voxel + v1Dir
         local v2Voxel: vector = voxel + v2Dir
         local v3Voxel: vector = voxel + v3Dir
 
-        local v1ID: number = if geo._vertexStorage[lod][v1Voxel] then geo._vertexStorage[lod][v1Voxel][v1Index] else 0
-        local v2ID: number = if geo._vertexStorage[lod][v2Voxel] then geo._vertexStorage[lod][v2Voxel][v2Index] else 0
-        local v3ID: number = if geo._vertexStorage[lod][v3Voxel] then geo._vertexStorage[lod][v3Voxel][v3Index] else 0
+        local v1ID: number? = if geo._vertexStorage[lod][v1Voxel] then geo._vertexStorage[lod][v1Voxel][v1Index] else nil
+        local v2ID: number? = if geo._vertexStorage[lod][v2Voxel] then geo._vertexStorage[lod][v2Voxel][v2Index] else nil
+        local v3ID: number? = if geo._vertexStorage[lod][v3Voxel] then geo._vertexStorage[lod][v3Voxel][v3Index] else nil
 
-        if v1ID and v1ID ~= 0 and #mesh:GetVertexFaces(v1ID) == 0 then
+        assert(v1ID)
+        assert(v2ID)
+        assert(v3ID)
+
+        if v1ID and #mesh:GetVertexFaces(v1ID) == 0 then
             geo:RemoveVertexId(v1Index, v1Voxel, lod)
             table.insert(recycleVerts, v1ID)
         end
 
-        if v2ID and v2ID ~= 0 and #mesh:GetVertexFaces(v2ID) == 0 then
+        if v2ID and #mesh:GetVertexFaces(v2ID) == 0 then
             geo:RemoveVertexId(v2Index, v2Voxel, lod)
             table.insert(recycleVerts, v2ID)
         end
 
-        if v3ID and v3ID ~= 0 and #mesh:GetVertexFaces(v3ID) == 0 then
+        if v3ID and #mesh:GetVertexFaces(v3ID) == 0 then
             geo:RemoveVertexId(v3Index, v3Voxel, lod)
             table.insert(recycleVerts, v3ID)
         end
@@ -226,20 +259,9 @@ local function cleanupVoxel(voxel: vector, lod: number, geo: GeometryContainer, 
     geo:RemoveFaces(voxel, lod)
 end
 
-local sampleCornerBuffer: { number } = {}
-
 -- Samples the 8 corners of the voxel and calculates the casecode
 local function sampleCaseCode(voxel: vector, voxelSize: number, renderAreaPos: vector): number
-    local voxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
-    local halfSize: number = voxelSize / 2
-
-    for i: number = 0, 7 do
-        local mask: vector = CORNER_MASK[i]
-        local cornerPos: vector = voxelPos + mask * halfSize
-        sampleCornerBuffer[i] = (PLANET_RADIUS - 20) - vector.magnitude(cornerPos)
-    end
-
-    return getCaseCode(sampleCornerBuffer)
+    return getCaseCode(sampleVoxelCorners(voxel, voxelSize, renderAreaPos))
 end
 
 local function canSubdivide(
@@ -253,9 +275,10 @@ local function canSubdivide(
     if lod >= highestLOD then return false end
     local globalVoxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
     local distanceStuds: vector = vector.abs(globalVoxelPos - globalViewerPosition)
-    local distanceVoxels: vector = vector.floor(distanceStuds / voxelSize)
+    local distanceVoxels: vector = distanceStuds / voxelSize
 
-    return distanceVoxels.x <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.y <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.z <= SUBDIVIDE_VOXEL_DIST
+    --return distanceVoxels.x <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.y <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.z <= SUBDIVIDE_VOXEL_DIST
+    return vector.magnitude(distanceVoxels) <= SUBDIVIDE_VOXEL_DIST
 end
 
 local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod: number)
@@ -303,6 +326,9 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
         _renderArea = { Min = vector.zero, Max = vector.zero },
         _processFrontIndex = 0,
         _processBackIndex = 0,
+        _renderListFront = 0,
+        _renderListBack = 0,
+        _renderListLod = 1,
         _voxelsToProcess = {},
         _voxelsToCleanup = voxelsToCleanup,
         _voxelsToRender = voxelsToRender,
@@ -316,9 +342,9 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
         _processZ = 0,
     }, RendererInstance)
 
-    local cornerBuffer: { number } = {}
-    renderStep = RunService.Heartbeat:Connect(function(dt: number)
+    renderStep = RunService.Heartbeat:Connect(function()
         local count: number = 0
+        local renderAreaPos: vector = vector.create(self.RenderAreaCFrame.X, self.RenderAreaCFrame.Y, self.RenderAreaCFrame.Z)
 
         if self.State == "Processing" then
             debug.profilebegin("Processing")
@@ -326,7 +352,6 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
             local resumeX: number = self._processX
             local resumeY: number = self._processY
             local resumeZ: number = self._processZ
-            local renderAreaPos: vector = vector.create(self.RenderAreaCFrame.X, self.RenderAreaCFrame.Y, self.RenderAreaCFrame.Z)
             local isResuming: boolean = true
 
             for y = resumeY, self._renderArea.Max.y do
@@ -384,6 +409,9 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
 
             debug.profileend()
             self.State = "Recycling"
+            self._renderListFront = 1
+            self._renderListBack = #self._voxelsToRender[self.TargetLod]
+            self._renderListLod = self.TargetLod
             return
         end
 
@@ -393,22 +421,23 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
             local isEmpty: boolean = true
 
             for lod: number, voxelList: { vector } in voxelsToCleanup do
+                local voxelSize: number = self._voxelSizes[lod]
                 for i: number = #voxelList, 1, -1 do
                     isEmpty = false
                     local voxel: vector = voxelList[i]
-                    cleanupVoxel(voxel, lod, self.GeometryContainer, self._mesh, self._recycleVertices)
+                    cleanupVoxel(voxel, lod, voxelSize, renderAreaPos, self.GeometryContainer, self._mesh, self._recycleVertices)
                     table.remove(voxelList, i)
                     count += 1
 
                     if count >= VOXEL_CLEANUP_PER_FRAME then
                         debug.profileend()
-                        return
+                        break
                     end
                 end
 
                 if count >= VOXEL_CLEANUP_PER_FRAME then
                     debug.profileend()
-                    return
+                    break
                 end
             end
 
@@ -417,28 +446,59 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
         end
 
         -- Render new voxels
-        if self.State == "Rendering" then
+        if self.State == "Rendering" or self.State == "Recycling" then
             debug.profilebegin("Voxel Rendering")
             local renderIsEmpty: boolean = true
             count = 0
 
-            for lod: number, voxelList: { vector } in voxelsToRender do
-                for i: number = #voxelList, 1, -1 do
+            -- for lod: number = self._renderListLod, 10 do
+            --     local voxelList: { vector } = voxelsToRender[lod]
+
+            --     for i: number = #voxelList, 1, -1 do
+            --         renderIsEmpty = false
+            --         local voxel: vector = voxelList[i]
+            --         self:RenderVoxel(voxel, lod, cornerBuffer)
+            --         table.remove(voxelList, i)
+            --         count += 1
+
+            --         if count >= VOXELS_RENDER_PER_FRAME then break end
+            --     end
+
+            --     if count >= VOXELS_RENDER_PER_FRAME then break end
+            -- end
+
+            for lod: number = self._renderListLod, 10 do
+                local voxelList: { vector } = voxelsToRender[lod]
+                local front: number = self._renderListFront
+                local back: number = self._renderListBack
+
+                for i: number = front, back do
                     renderIsEmpty = false
                     local voxel: vector = voxelList[i]
-                    self:RenderVoxel(voxel, lod, cornerBuffer)
-                    table.remove(voxelList, i)
+                    self:RenderVoxel(voxel, lod)
+                    voxelList[i] = nil
+                    self._renderListFront += 1
                     count += 1
 
                     if count >= VOXELS_RENDER_PER_FRAME then break end
                 end
 
                 if count >= VOXELS_RENDER_PER_FRAME then break end
+                self._renderListFront = 1
+                self._renderListBack = #voxelsToRender[math.min(lod + 1, 10)]
+                self._renderListLod += 1
             end
 
             if renderIsEmpty then
                 self.State = "Idle"
+                local preVertexCount: number = #self._mesh:GetVertices()
                 self._mesh:RemoveUnused()
+                local vertices = #self._mesh:GetVertices()
+                local unusedVertexCount: number = preVertexCount - vertices
+                local recycleCount: number = #self._recycleVertices
+
+                print("VertexCount:", vertices)
+                print("Unused:", unusedVertexCount, "Recycled:", recycleCount)
                 table.clear(self._recycleVertices)
 
                 if not self._meshPart and self.GeometryContainer.FaceCount > 0 then
@@ -507,29 +567,37 @@ function RendererInstance:GetVertexId(voxel: vector, lod: number, vertexPos: vec
     local vid: number? = self.GeometryContainer:GetVertexId(reuseIndex, vertexOwnerVoxel, lod)
 
     if vid then
-        return vid
+        return vid, "Stored"
     else
         local newVid: number = 0
         local recycleBinSize: number = #self._recycleVertices
+        local from
 
         if recycleBinSize > 0 then
             newVid = self._recycleVertices[recycleBinSize]
-            self._mesh:SetPosition(newVid, Vector3.new(vertexPos.x, vertexPos.y, vertexPos.z))
             table.remove(self._recycleVertices, recycleBinSize)
+            from = "RecycleBin"
         else
             newVid = self._mesh:AddVertex(Vector3.new(vertexPos.x, vertexPos.y, vertexPos.z))
+            from = "NewVertex"
         end
 
+        self._mesh:SetPosition(newVid, Vector3.new(vertexPos.x, vertexPos.y, vertexPos.z))
         self.GeometryContainer:StoreVertexId(newVid, reuseIndex, vertexOwnerVoxel, lod)
-        return newVid
+        return newVid, from
     end
 end
+
+-- local lodColors = {}
+-- for i = 1, 10 do
+--     lodColors[i] = BrickColor.random()
+-- end
 
 --[=[
     @param voxel vector -- The location of the voxel grid position within the specified LOD
     @param lod number -- The level of detail of the voxel
 ]=]
-function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: { number }): number
+function RendererInstance:RenderVoxel(voxel: vector, lod: number): number
     local mesh: EditableMesh = self._mesh
     local voxelSize: number = self._voxelSizes[lod]
     local halfSize: number = voxelSize / 2
@@ -537,12 +605,7 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: 
         vector.create(self.RenderAreaCFrame.Position.X, self.RenderAreaCFrame.Position.Y, self.RenderAreaCFrame.Position.Z)
     local voxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
 
-    for i: number = 0, 7 do
-        local mask: vector = CORNER_MASK[i]
-        local cornerPos: vector = voxelPos + mask * halfSize
-
-        cornerBuffer[i] = (PLANET_RADIUS - 20) - vector.magnitude(cornerPos)
-    end
+    local cornerBuffer: { number } = sampleVoxelCorners(voxel, voxelSize, renderAreaPos)
 
     local caseCode: number = getCaseCode(cornerBuffer)
     local cellClass: number = TriTables.regularCellClass[caseCode]
@@ -575,7 +638,7 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, cornerBuffer: 
     -- voxelPart.CanCollide = true
     -- voxelPart.Transparency = 0.5
     -- voxelPart.BrickColor = lodColors[lod]
-    -- voxelPart.CFrame = CFrame.new(getVoxelWorldPosition(voxel, voxelSize, renderAreaPos))
+    -- voxelPart.Position = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
     -- voxelPart.Name = `{voxel} | {lod}`
     -- voxelPart.Parent = workspace
 
@@ -591,6 +654,8 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     self._renderArea.Min = renderMin
     self._renderArea.Max = renderMax
     local renderAreaPos: vector = vector.create(self.RenderAreaCFrame.X, self.RenderAreaCFrame.Y, self.RenderAreaCFrame.Z)
+
+    print("RenderMin:", renderMin, "RenderMax", renderMax)
 
     --Find voxels we can cleanup for all relevant LODs
     for lod: number = startingLOD, 10 do
@@ -628,6 +693,79 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     self.ViewerPosition = posOnPlanet
     self.TargetLod = startingLOD
     self.State = "Processing"
+
+    -- local mainVoxel: vector = self:GetNearestVoxel(posOnPlanet, 9)
+    -- local mainVoxelSize: number = self._voxelSizes[9]
+    -- local voxelSize: number = self._voxelSizes[10]
+
+    -- local child0: vector = self.GeometryContainer:GetHighLodVoxelPos(mainVoxel, 1)
+    -- local child0ID: vector = getVoxelWorldPosition(child0, voxelSize, renderAreaPos)
+    -- local child1ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 0, 0), voxelSize, renderAreaPos)
+    -- local child2ID: vector = getVoxelWorldPosition(child0 + vector.create(0, 0, -1), voxelSize, renderAreaPos)
+    -- local child3ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 0, -1), voxelSize, renderAreaPos)
+    -- local child4ID: vector = getVoxelWorldPosition(child0 + vector.create(0, 1, 0), voxelSize, renderAreaPos)
+    -- local child5ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 1, 0), voxelSize, renderAreaPos)
+    -- local child6ID: vector = getVoxelWorldPosition(child0 + vector.create(0, 1, -1), voxelSize, renderAreaPos)
+    -- local child7ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 1, -1), voxelSize, renderAreaPos)
+
+    -- local box0: Part = Instance.new("Part")
+    -- box0.Name = "Box0"
+    -- box0.Anchored = true
+    -- box0.CanCollide = false
+    -- box0.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
+    -- box0.Transparency = 0.5
+    -- box0.BrickColor = BrickColor.random()
+    -- box0.Position = child0ID
+    -- box0.Parent = workspace
+
+    -- local box1: Part = box0:Clone()
+    -- box1.Name = "Box1"
+    -- box1.Anchored = true
+    -- box1.CanCollide = false
+    -- box1.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
+    -- box1.Transparency = 0.5
+    -- box1.BrickColor = BrickColor.random()
+    -- box1.Position = child1ID
+    -- box1.Parent = workspace
+
+    -- local box2: Part = box0:Clone()
+    -- box2.Name = "Box2"
+    -- box2.Anchored = true
+    -- box2.CanCollide = false
+    -- box2.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
+    -- box2.Transparency = 0.5
+    -- box2.BrickColor = BrickColor.random()
+    -- box2.Position = child2ID
+    -- box2.Parent = workspace
+
+    -- local box3: Part = box0:Clone()
+    -- box3.Name = "Box3"
+    -- box3.Anchored = true
+    -- box3.CanCollide = false
+    -- box3.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
+    -- box3.Transparency = 0.5
+    -- box3.BrickColor = BrickColor.random()
+    -- box3.Position = child3ID
+    -- box3.Parent = workspace
+
+    -- local box4: Part = box0:Clone()
+    -- box4.Name = "Box4"
+    -- box4.Anchored = true
+    -- box4.CanCollide = false
+    -- box4.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
+    -- box4.Transparency = 0.5
+    -- box4.BrickColor = BrickColor.random()
+    -- box4.Position = child4ID
+    -- box4.Parent = workspace
+
+    -- local parentVoxel: vector = self.GeometryContainer:GetLowLodVoxelPos(child0 + vector.create(1, 1, -1))
+    -- local parentGlobalPos: vector = getVoxelWorldPosition(parentVoxel, mainVoxelSize, renderAreaPos)
+
+    -- local mainBox = box0:Clone()
+    -- mainBox.Size = Vector3.new(mainVoxelSize, mainVoxelSize, mainVoxelSize)
+    -- mainBox.BrickColor = BrickColor.random()
+    -- mainBox.Position = parentGlobalPos
+    -- mainBox.Parent = workspace
 
     return true
 end

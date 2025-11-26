@@ -64,7 +64,7 @@ end
     @within GeometryContainer
 ]=]
 function GeometryContainerInstance:GetLowLodVoxelPos(pos: vector, levelsLower: number?): vector
-    return vector.floor(pos / (2 ^ (levelsLower or 1))) + Z_CORRECTION
+    return vector.floor(pos / (2 ^ (levelsLower or 1)))
 end
 
 --[=[
