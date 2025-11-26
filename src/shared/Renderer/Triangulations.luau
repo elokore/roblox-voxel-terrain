@@ -1,4 +1,6 @@
 --!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TableUtil = require(ReplicatedStorage.Packages.TableUtil)
 --================================================================================
 --
 -- The Transvoxel Algorithm look-up tables
@@ -107,10 +109,9 @@ local regularCellData: { CellData } =
 	}
 
 --Convert regularCellData to start at index 0
-for x, value in regularCellData do
-	regularCellData[x - 1] = value
+for x = 1, #regularCellData + 1 do
+	regularCellData[x - 1] = regularCellData[x]
 end
-
 
 -- The regularVertexData table gives the vertex locations for every one of the 256 possible
 -- cases in the modified Marching Cubes algorithm. Each 16-bit value also provides information
@@ -379,9 +380,14 @@ local regularVertexData: { { number } } =
 	}
 
 --Convert regularVertexData to start at index 0
-for x, subTable in regularVertexData do
-	for y, otherValue in subTable do
-		subTable[y - 1] = otherValue
+for x = 1, #regularVertexData + 1 do
+	local subTable: { number } = regularVertexData[x]
+
+	if subTable then
+		for y = 1, #subTable + 1 do
+			local otherValue: number = subTable[y]
+			subTable[y - 1] = otherValue
+		end
 	end
 
 	regularVertexData[x - 1] = subTable
@@ -432,8 +438,8 @@ local transitionCellClass: { number } =
 	}
 
 --Convert transitionCellClass to start at index 0
-for x, value in transitionCellClass do
-	transitionCellClass[x - 1] = value
+for x = 1, #transitionCellClass + 1 do
+	transitionCellClass[x - 1] = transitionCellClass[x]
 end
 
 
@@ -502,8 +508,8 @@ local transitionCellData: { CellData } =
 	}
 
 --Convert transitionCellData to start at index 0
-for x, value in transitionCellData do
-	transitionCellData[x - 1] = value
+for x = 1, #transitionCellData + 1 do
+	transitionCellData[x - 1] = transitionCellData[x]
 end
 
 
@@ -516,8 +522,8 @@ local transitionCornerData: { number } =
 	}
 
 --Convert transitionCornerData to start at index 0
-for x, value in transitionCornerData do
-	transitionCornerData[x - 1] = value
+for x = 1, #transitionCornerData + 1 do
+	transitionCornerData[x - 1] = transitionCornerData[x]
 end
 
 
@@ -1044,9 +1050,12 @@ local transitionVertexData: { { number } } =
 	}
 
 --Convert transitionVertexData to start at index 0
-for x, subTable in transitionVertexData do
-	for y, otherValue in subTable do
-		subTable[y - 1] = otherValue
+for x = 1, #transitionVertexData + 1 do
+	local subTable = transitionVertexData[x]
+	if subTable then
+		for y = 1, #subTable + 1 do
+			subTable[y - 1] = subTable[y]
+		end
 	end
 
 	transitionVertexData[x - 1] = subTable

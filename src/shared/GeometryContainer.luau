@@ -26,6 +26,8 @@ export type GeometryContainer = typeof(setmetatable(
 ))
 
 -- < Variables > --
+local Z_CORRECTION: vector = vector.create(0, 0, 1)
+
 local GeometryContainer = {}
 local GeometryContainerInstance = {}
 GeometryContainerInstance.__index = GeometryContainerInstance
@@ -62,7 +64,7 @@ end
     @within GeometryContainer
 ]=]
 function GeometryContainerInstance:GetLowLodVoxelPos(pos: vector, levelsLower: number?): vector
-    return vector.floor(pos / (2 ^ (levelsLower or 1)))
+    return vector.floor(pos / (2 ^ (levelsLower or 1))) + Z_CORRECTION
 end
 
 --[=[
@@ -76,7 +78,7 @@ end
     @within GeometryContainer
 ]=]
 function GeometryContainerInstance:GetHighLodVoxelPos(pos: vector, levelsHigher: number?): vector
-    return pos * (2 ^ (levelsHigher or 1))
+    return pos * (2 ^ (levelsHigher or 1)) + Z_CORRECTION
 end
 
 --[=[
