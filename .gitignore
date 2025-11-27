@@ -5,6 +5,8 @@
 /*.rbxlx.lock
 /*.rbxl.lock
 
+sourcemap.json
+
 #Packages
 Packages
 ServerPackages

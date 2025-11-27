@@ -36,10 +36,10 @@ export type Renderer = typeof(setmetatable(
         _processBackIndex: number,
         _voxelsToProcess: { number },
         _voxelsToCleanup: { [number]: { vector } },
-        _renderListFront: number,
-        _renderListBack: number,
         _renderListLod: number,
         _voxelsToRender: { [number]: { vector } },
+        _voxelsToRenderFirst: { [number]: { vector } },
+        _importantVoxels: { [number]: boolean },
         _recycleVertices: { number },
         _mesh: EditableMesh,
         _meshPart: MeshPart?,
@@ -54,7 +54,7 @@ export type Renderer = typeof(setmetatable(
 
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 500
+local RENDER_RADIUS: number = 650
 local VOXEL_CLEANUP_PER_FRAME: number = 500
 local VOXELS_RENDER_PER_FRAME: number = 500
 local VOXELS_PROCESS_PER_FRAME: number = 5000
@@ -282,7 +282,7 @@ local function canSubdivide(
     return vector.magnitude(distanceVoxels) <= SUBDIVIDE_VOXEL_DIST
 end
 
-local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod: number)
+local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod: number, shouldRenderFirst: boolean)
     local childLod: number = lod + 1
     local child0: vector = self.GeometryContainer:GetHighLodVoxelPos(voxel, 1)
     local child0ID: number = getVoxelID(child0, childLod)
@@ -303,6 +303,18 @@ local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod:
     self._voxelsToProcess[backIndex + 6] = child5ID
     self._voxelsToProcess[backIndex + 7] = child6ID
     self._voxelsToProcess[backIndex + 8] = child7ID
+
+    if shouldRenderFirst then
+        self._importantVoxels[child0ID] = true
+        self._importantVoxels[child1ID] = true
+        self._importantVoxels[child2ID] = true
+        self._importantVoxels[child3ID] = true
+        self._importantVoxels[child4ID] = true
+        self._importantVoxels[child5ID] = true
+        self._importantVoxels[child6ID] = true
+        self._importantVoxels[child7ID] = true
+    end
+
     self._processBackIndex += 8
 end
 
@@ -310,10 +322,12 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
     local voxelSizes: { number } = {}
     local voxelsToCleanup: { [number]: { vector } } = {}
     local voxelsToRender: { [number]: { vector } } = {}
+    local voxelsToRenderFirst: { [number]: { vector } } = {}
     for x = 1, highestLOD do
         voxelSizes[x] = voxelSize * (2 ^ (highestLOD - x))
         voxelsToCleanup[x] = {}
         voxelsToRender[x] = {}
+        voxelsToRenderFirst[x] = {}
     end
 
     local renderStep: RBXScriptConnection = nil
@@ -333,7 +347,10 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
         _voxelsToProcess = {},
         _voxelsToCleanup = voxelsToCleanup,
         _voxelsToRender = voxelsToRender,
+        _voxelsToRenderFirst = voxelsToRenderFirst,
         _recycleVertices = {},
+        _importantVoxels = {},
+        _recycleFaces = {},
         _mesh = AssetService:CreateEditableMesh(),
         _voxelSizes = voxelSizes,
         _meshPart = nil,
@@ -376,15 +393,22 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
 
                         local maxIterations: number = VOXELS_PROCESS_PER_FRAME - processCount
                         for _ = 1, maxIterations do
-                            local voxel: vector, lod: number = getVoxelFromID(self._voxelsToProcess[self._processFrontIndex])
+                            local voxelID: number = self._voxelsToProcess[self._processFrontIndex]
+                            local voxel: vector, lod: number = getVoxelFromID(voxelID)
                             local thisVoxelSize: number = self._voxelSizes[lod]
+                            local isImportantVoxel: boolean = self._importantVoxels[voxelID] ~= nil
+                            local voxelWorldPos: vector = getVoxelWorldPosition(voxel, thisVoxelSize, renderAreaPos)
+                            local dist: number = vector.magnitude(voxelWorldPos - self.ViewerPosition)
 
                             if canSubdivide(voxel, thisVoxelSize, renderAreaPos, lod, 10, self.ViewerPosition) then
-                                subdivideAndAddToProcessQueue(self, voxel, lod)
-                            elseif self.GeometryContainer._faceStorage[lod][voxel] == nil then
+                                local renderFirst: boolean = self.GeometryContainer._faceStorage[lod][voxel] ~= nil or isImportantVoxel
+                                subdivideAndAddToProcessQueue(self, voxel, lod, renderFirst)
+                            elseif not self.GeometryContainer._faceStorage[lod][voxel] and dist <= RENDER_RADIUS then
                                 local caseCode: number = sampleCaseCode(voxel, thisVoxelSize, renderAreaPos)
                                 if caseCode ~= 0 and caseCode ~= 255 then table.insert(self._voxelsToRender[lod], voxel) end
                             end
+
+                            if self._importantVoxels[voxelID] then self._importantVoxels[voxelID] = nil end
 
                             self._voxelsToProcess[self._processFrontIndex] = nil
                             self._processFrontIndex += 1
@@ -410,8 +434,6 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
 
             debug.profileend()
             self.State = "Recycling"
-            self._renderListFront = 1
-            self._renderListBack = #self._voxelsToRender[self.TargetLod]
             self._renderListLod = self.TargetLod
             return
         end
@@ -452,54 +474,25 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
             local renderIsEmpty: boolean = true
             count = 0
 
-            -- for lod: number = self._renderListLod, 10 do
-            --     local voxelList: { vector } = voxelsToRender[lod]
-
-            --     for i: number = #voxelList, 1, -1 do
-            --         renderIsEmpty = false
-            --         local voxel: vector = voxelList[i]
-            --         self:RenderVoxel(voxel, lod, cornerBuffer)
-            --         table.remove(voxelList, i)
-            --         count += 1
-
-            --         if count >= VOXELS_RENDER_PER_FRAME then break end
-            --     end
-
-            --     if count >= VOXELS_RENDER_PER_FRAME then break end
-            -- end
-
             for lod: number = self._renderListLod, 10 do
                 local voxelList: { vector } = voxelsToRender[lod]
-                local front: number = self._renderListFront
-                local back: number = self._renderListBack
 
-                for i: number = front, back do
+                for i: number = #voxelList, 1, -1 do
                     renderIsEmpty = false
                     local voxel: vector = voxelList[i]
                     self:RenderVoxel(voxel, lod)
-                    voxelList[i] = nil
-                    self._renderListFront += 1
+                    table.remove(voxelList, i)
                     count += 1
 
                     if count >= VOXELS_RENDER_PER_FRAME then break end
                 end
 
                 if count >= VOXELS_RENDER_PER_FRAME then break end
-                self._renderListFront = 1
-                self._renderListBack = #voxelsToRender[math.min(lod + 1, 10)]
-                self._renderListLod += 1
             end
 
             if renderIsEmpty then
                 self.State = "Idle"
-                local preVertexCount: number = #self._mesh:GetVertices()
                 self._mesh:RemoveUnused()
-                local vertices = #self._mesh:GetVertices()
-                local unusedVertexCount: number = preVertexCount - vertices
-                local recycleCount: number = #self._recycleVertices
-
-                print("VertexCount:", vertices)
-                print("Unused:", unusedVertexCount, "Recycled:", recycleCount)
                 table.clear(self._recycleVertices)
 
                 if not self._meshPart and self.GeometryContainer.FaceCount > 0 then
@@ -546,7 +539,7 @@ function RendererInstance:GetRenderAreaBoundingBox(areaCenter: vector, lod: numb
     local minVoxel: vector = self:GetNearestVoxel(boxMin, lod)
     local maxVoxel: vector = self:GetNearestVoxel(boxMax, lod)
     local size: vector = maxVoxel - minVoxel
-    local sizeError: vector = vector.max(vector.create(4, 4, 4) - size, vector.zero)
+    local sizeError: vector = vector.max(vector.create(8, 8, 8) - size, vector.zero)
     maxVoxel += sizeError
 
     return minVoxel, maxVoxel
@@ -675,12 +668,9 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
         end
 
         for voxel: vector, faces: { number } in self.GeometryContainer._faceStorage[lod] do
-            local inBounds: boolean = voxel.x >= thisLodMin.x
-                and voxel.x <= thisLodMax.x
-                and voxel.y >= thisLodMin.y
-                and voxel.y <= thisLodMax.y
-                and voxel.z >= thisLodMin.z
-                and voxel.z <= thisLodMax.z
+            local voxelWorldPos: vector = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
+            local dist: number = vector.magnitude(voxelWorldPos - posOnPlanet)
+            local inBounds: boolean = dist <= RENDER_RADIUS
 
             local parentVoxel: vector = self.GeometryContainer:GetLowLodVoxelPos(voxel, 1)
             local parentVoxelSize: number = self._voxelSizes[lod - 1]
@@ -705,79 +695,6 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     self.ViewerPosition = posOnPlanet
     self.TargetLod = startingLOD
     self.State = "Processing"
-
-    -- local mainVoxel: vector = self:GetNearestVoxel(posOnPlanet, 9)
-    -- local mainVoxelSize: number = self._voxelSizes[9]
-    -- local voxelSize: number = self._voxelSizes[10]
-
-    -- local child0: vector = self.GeometryContainer:GetHighLodVoxelPos(mainVoxel, 1)
-    -- local child0ID: vector = getVoxelWorldPosition(child0, voxelSize, renderAreaPos)
-    -- local child1ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 0, 0), voxelSize, renderAreaPos)
-    -- local child2ID: vector = getVoxelWorldPosition(child0 + vector.create(0, 0, -1), voxelSize, renderAreaPos)
-    -- local child3ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 0, -1), voxelSize, renderAreaPos)
-    -- local child4ID: vector = getVoxelWorldPosition(child0 + vector.create(0, 1, 0), voxelSize, renderAreaPos)
-    -- local child5ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 1, 0), voxelSize, renderAreaPos)
-    -- local child6ID: vector = getVoxelWorldPosition(child0 + vector.create(0, 1, -1), voxelSize, renderAreaPos)
-    -- local child7ID: vector = getVoxelWorldPosition(child0 + vector.create(1, 1, -1), voxelSize, renderAreaPos)
-
-    -- local box0: Part = Instance.new("Part")
-    -- box0.Name = "Box0"
-    -- box0.Anchored = true
-    -- box0.CanCollide = false
-    -- box0.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
-    -- box0.Transparency = 0.5
-    -- box0.BrickColor = BrickColor.random()
-    -- box0.Position = child0ID
-    -- box0.Parent = workspace
-
-    -- local box1: Part = box0:Clone()
-    -- box1.Name = "Box1"
-    -- box1.Anchored = true
-    -- box1.CanCollide = false
-    -- box1.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
-    -- box1.Transparency = 0.5
-    -- box1.BrickColor = BrickColor.random()
-    -- box1.Position = child1ID
-    -- box1.Parent = workspace
-
-    -- local box2: Part = box0:Clone()
-    -- box2.Name = "Box2"
-    -- box2.Anchored = true
-    -- box2.CanCollide = false
-    -- box2.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
-    -- box2.Transparency = 0.5
-    -- box2.BrickColor = BrickColor.random()
-    -- box2.Position = child2ID
-    -- box2.Parent = workspace
-
-    -- local box3: Part = box0:Clone()
-    -- box3.Name = "Box3"
-    -- box3.Anchored = true
-    -- box3.CanCollide = false
-    -- box3.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
-    -- box3.Transparency = 0.5
-    -- box3.BrickColor = BrickColor.random()
-    -- box3.Position = child3ID
-    -- box3.Parent = workspace
-
-    -- local box4: Part = box0:Clone()
-    -- box4.Name = "Box4"
-    -- box4.Anchored = true
-    -- box4.CanCollide = false
-    -- box4.Size = Vector3.new(voxelSize, voxelSize, voxelSize)
-    -- box4.Transparency = 0.5
-    -- box4.BrickColor = BrickColor.random()
-    -- box4.Position = child4ID
-    -- box4.Parent = workspace
-
-    -- local parentVoxel: vector = self.GeometryContainer:GetLowLodVoxelPos(child0 + vector.create(1, 1, -1))
-    -- local parentGlobalPos: vector = getVoxelWorldPosition(parentVoxel, mainVoxelSize, renderAreaPos)
-
-    -- local mainBox = box0:Clone()
-    -- mainBox.Size = Vector3.new(mainVoxelSize, mainVoxelSize, mainVoxelSize)
-    -- mainBox.BrickColor = BrickColor.random()
-    -- mainBox.Position = parentGlobalPos
-    -- mainBox.Parent = workspace
 
     return true
 end
