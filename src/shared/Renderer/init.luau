@@ -38,8 +38,6 @@ export type Renderer = typeof(setmetatable(
         _voxelsToCleanup: { [number]: { vector } },
         _renderListLod: number,
         _voxelsToRender: { [number]: { vector } },
-        _voxelsToRenderFirst: { [number]: { vector } },
-        _importantVoxels: { [number]: boolean },
         _recycleVertices: { number },
         _mesh: EditableMesh,
         _meshPart: MeshPart?,
@@ -54,11 +52,11 @@ export type Renderer = typeof(setmetatable(
 
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 650
+local RENDER_RADIUS: number = 750
 local VOXEL_CLEANUP_PER_FRAME: number = 500
 local VOXELS_RENDER_PER_FRAME: number = 500
 local VOXELS_PROCESS_PER_FRAME: number = 5000
-local SUBDIVIDE_VOXEL_DIST: number = 12
+local SUBDIVIDE_VOXEL_DIST: number = 10
 local CORNER_MASK: { vector } = TriTables.cornerMask
 local Renderer = {}
 local RendererInstance = {}
@@ -278,11 +276,11 @@ local function canSubdivide(
     local distanceStuds: vector = vector.abs(globalVoxelPos - globalViewerPosition)
     local distanceVoxels: vector = distanceStuds / voxelSize
 
-    --return distanceVoxels.x <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.y <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.z <= SUBDIVIDE_VOXEL_DIST
-    return vector.magnitude(distanceVoxels) <= SUBDIVIDE_VOXEL_DIST
+    return distanceVoxels.x <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.y <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.z <= SUBDIVIDE_VOXEL_DIST
+    --return vector.magnitude(distanceVoxels) <= SUBDIVIDE_VOXEL_DIST
 end
 
-local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod: number, shouldRenderFirst: boolean)
+local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod: number)
     local childLod: number = lod + 1
     local child0: vector = self.GeometryContainer:GetHighLodVoxelPos(voxel, 1)
     local child0ID: number = getVoxelID(child0, childLod)
@@ -304,17 +302,6 @@ local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod:
     self._voxelsToProcess[backIndex + 7] = child6ID
     self._voxelsToProcess[backIndex + 8] = child7ID
 
-    if shouldRenderFirst then
-        self._importantVoxels[child0ID] = true
-        self._importantVoxels[child1ID] = true
-        self._importantVoxels[child2ID] = true
-        self._importantVoxels[child3ID] = true
-        self._importantVoxels[child4ID] = true
-        self._importantVoxels[child5ID] = true
-        self._importantVoxels[child6ID] = true
-        self._importantVoxels[child7ID] = true
-    end
-
     self._processBackIndex += 8
 end
 
@@ -322,12 +309,10 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
     local voxelSizes: { number } = {}
     local voxelsToCleanup: { [number]: { vector } } = {}
     local voxelsToRender: { [number]: { vector } } = {}
-    local voxelsToRenderFirst: { [number]: { vector } } = {}
     for x = 1, highestLOD do
         voxelSizes[x] = voxelSize * (2 ^ (highestLOD - x))
         voxelsToCleanup[x] = {}
         voxelsToRender[x] = {}
-        voxelsToRenderFirst[x] = {}
     end
 
     local renderStep: RBXScriptConnection = nil
@@ -347,9 +332,7 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
         _voxelsToProcess = {},
         _voxelsToCleanup = voxelsToCleanup,
         _voxelsToRender = voxelsToRender,
-        _voxelsToRenderFirst = voxelsToRenderFirst,
         _recycleVertices = {},
-        _importantVoxels = {},
         _recycleFaces = {},
         _mesh = AssetService:CreateEditableMesh(),
         _voxelSizes = voxelSizes,
@@ -396,19 +379,15 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
                             local voxelID: number = self._voxelsToProcess[self._processFrontIndex]
                             local voxel: vector, lod: number = getVoxelFromID(voxelID)
                             local thisVoxelSize: number = self._voxelSizes[lod]
-                            local isImportantVoxel: boolean = self._importantVoxels[voxelID] ~= nil
                             local voxelWorldPos: vector = getVoxelWorldPosition(voxel, thisVoxelSize, renderAreaPos)
                             local dist: number = vector.magnitude(voxelWorldPos - self.ViewerPosition)
 
                             if canSubdivide(voxel, thisVoxelSize, renderAreaPos, lod, 10, self.ViewerPosition) then
-                                local renderFirst: boolean = self.GeometryContainer._faceStorage[lod][voxel] ~= nil or isImportantVoxel
-                                subdivideAndAddToProcessQueue(self, voxel, lod, renderFirst)
+                                subdivideAndAddToProcessQueue(self, voxel, lod)
                             elseif not self.GeometryContainer._faceStorage[lod][voxel] and dist <= RENDER_RADIUS then
                                 local caseCode: number = sampleCaseCode(voxel, thisVoxelSize, renderAreaPos)
                                 if caseCode ~= 0 and caseCode ~= 255 then table.insert(self._voxelsToRender[lod], voxel) end
                             end
-
-                            if self._importantVoxels[voxelID] then self._importantVoxels[voxelID] = nil end
 
                             self._voxelsToProcess[self._processFrontIndex] = nil
                             self._processFrontIndex += 1
@@ -433,64 +412,36 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
             end
 
             debug.profileend()
-            self.State = "Recycling"
+            self.State = "Rendering"
             self._renderListLod = self.TargetLod
             return
-        end
-
-        -- Voxel cleanup
-        if self.State == "Recycling" then
-            debug.profilebegin("Recycling")
-            local isEmpty: boolean = true
-
-            for lod: number, voxelList: { vector } in voxelsToCleanup do
-                local voxelSize: number = self._voxelSizes[lod]
-                for i: number = #voxelList, 1, -1 do
-                    isEmpty = false
-                    local voxel: vector = voxelList[i]
-                    cleanupVoxel(voxel, lod, voxelSize, renderAreaPos, self.GeometryContainer, self._mesh, self._recycleVertices)
-                    table.remove(voxelList, i)
-                    count += 1
-
-                    if count >= VOXEL_CLEANUP_PER_FRAME then
-                        debug.profileend()
-                        return
-                    end
-                end
-
-                if count >= VOXEL_CLEANUP_PER_FRAME then
-                    debug.profileend()
-                    return
-                end
-            end
-
-            if isEmpty then self.State = "Rendering" end
-            debug.profileend()
         end
 
         -- Render new voxels
         if self.State == "Rendering" then
             debug.profilebegin("Voxel Rendering")
-            local renderIsEmpty: boolean = true
+            local lod: number = self._renderListLod
+            local lodIsEmpty: boolean = true
             count = 0
 
-            for lod: number = self._renderListLod, 10 do
-                local voxelList: { vector } = voxelsToRender[lod]
-
-                for i: number = #voxelList, 1, -1 do
-                    renderIsEmpty = false
-                    local voxel: vector = voxelList[i]
-                    self:RenderVoxel(voxel, lod)
-                    table.remove(voxelList, i)
-                    count += 1
-
-                    if count >= VOXELS_RENDER_PER_FRAME then break end
-                end
+            local voxelList: { vector } = self._voxelsToRender[math.min(lod, 10)]
+            for i: number = #voxelList, 1, -1 do
+                lodIsEmpty = false
+                local voxel: vector = voxelList[i]
+                self:RenderVoxel(voxel, lod)
+                table.remove(voxelList, i)
+                count += 1
 
                 if count >= VOXELS_RENDER_PER_FRAME then break end
             end
 
-            if renderIsEmpty then
+            local finishedRendering: boolean = lodIsEmpty and lod > 11
+            if lodIsEmpty then
+                self.State = "Recycling"
+                self._renderListLod += 1
+            end
+
+            if finishedRendering then
                 self.State = "Idle"
                 self._mesh:RemoveUnused()
                 table.clear(self._recycleVertices)
@@ -507,6 +458,37 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
                     end)
                 end
             end
+            debug.profileend()
+        end
+
+        -- Voxel cleanup
+        if self.State == "Recycling" then
+            debug.profilebegin("Recycling")
+            local isEmpty: boolean = true
+            local lod: number = self._renderListLod - 2
+
+            local voxelSize: number = self._voxelSizes[lod]
+            local voxelList: { vector } = self._voxelsToCleanup[lod] or {}
+
+            for i: number = #voxelList, 1, -1 do
+                isEmpty = false
+                local voxel: vector = voxelList[i]
+                cleanupVoxel(voxel, lod, voxelSize, renderAreaPos, self.GeometryContainer, self._mesh, self._recycleVertices)
+                table.remove(voxelList, i)
+                count += 1
+
+                if count >= VOXEL_CLEANUP_PER_FRAME then
+                    debug.profileend()
+                    return
+                end
+            end
+
+            if count >= VOXEL_CLEANUP_PER_FRAME then
+                debug.profileend()
+                return
+            end
+
+            if isEmpty then self.State = "Rendering" end
             debug.profileend()
         end
     end)
@@ -539,8 +521,10 @@ function RendererInstance:GetRenderAreaBoundingBox(areaCenter: vector, lod: numb
     local minVoxel: vector = self:GetNearestVoxel(boxMin, lod)
     local maxVoxel: vector = self:GetNearestVoxel(boxMax, lod)
     local size: vector = maxVoxel - minVoxel
-    local sizeError: vector = vector.max(vector.create(8, 8, 8) - size, vector.zero)
+    local sizeError: vector = vector.max(vector.create(4, 4, 4) - size, vector.zero)
+
     maxVoxel += sizeError
+    minVoxel -= sizeError
 
     return minVoxel, maxVoxel
 end
@@ -672,9 +656,9 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
             local shouldCleanup: boolean = not inBounds or canBeSubdivided or not canParentSubdivide
 
             if shouldCleanup then
-                BinaryArray.BinaryInsert(self._voxelsToCleanup[lod], voxel, voxelEval)
+                --BinaryArray.BinaryInsert(self._voxelsToCleanup[lod], voxel, voxelEval)
                 cleanCount += 1
-                --table.insert(self._voxelsToCleanup[lod], voxel)
+                table.insert(self._voxelsToCleanup[lod], voxel)
             end
         end
     end

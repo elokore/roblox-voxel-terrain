@@ -11,9 +11,7 @@ type Renderer = Renderer.Renderer
 
 -- < Variables > --
 local LOD: number = 10
-local renderer: Renderer = Renderer.new(10, LOD, CFrame.new())
-
-print("Renderer")
+local renderer: Renderer = Renderer.new(16, LOD, CFrame.new())
 
 local agent: Part = Instance.new("Part")
 agent.Name = "Agent"
