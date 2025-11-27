@@ -654,14 +654,7 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
 
     --Find voxels we can cleanup for all relevant LODs
     for lod: number = startingLOD, 10 do
-        local thisLodMin: vector = renderMin
-        local thisLodMax: vector = renderMax
         local voxelSize: number = self._voxelSizes[lod]
-
-        if lod ~= startingLOD then
-            thisLodMin = self.GeometryContainer:GetHighLodVoxelPos(renderMin, lod - startingLOD)
-            thisLodMax = self.GeometryContainer:GetHighLodVoxelPos(renderMax, lod - startingLOD)
-        end
 
         local function voxelEval(v: vector): number
             return getVoxelID(v, lod)
