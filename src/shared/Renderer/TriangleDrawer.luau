@@ -15,7 +15,7 @@ export type TriangleModel = Model & {
 local module = {}
 local wedge: BasePart = Instance.new("WedgePart")
 wedge.CastShadow = false
-wedge.Transparency = 1
+wedge.Transparency = 0.5
 wedge.Material = Enum.Material.SmoothPlastic
 wedge.Anchored = true
 

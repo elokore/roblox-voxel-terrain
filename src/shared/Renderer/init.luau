@@ -5,7 +5,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 -- < Imports > --
-local TerrainCollider = require(script.TerrainCollider)
 local TriangleDrawer = require(script.TriangleDrawer)
 local TriTables = require(script.Triangulations)
 local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
@@ -21,11 +20,11 @@ type Collider = Types.TerrainCollider
 
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 750
+local RENDER_RADIUS: number = 700
 local VOXEL_CLEANUP_PER_FRAME: number = 500
 local VOXELS_RENDER_PER_FRAME: number = 500
 local VOXELS_PROCESS_PER_FRAME: number = 5000
-local SUBDIVIDE_VOXEL_DIST: number = 10
+local SUBDIVIDE_VOXEL_DIST: number = 8
 local CORNER_MASK: { vector } = TriTables.cornerMask
 local Renderer = {}
 local RendererInstance = {}
@@ -159,7 +158,7 @@ local function sampleVoxelCorners(voxel: vector, voxelSize: number, renderAreaPo
         local cornerPos: vector = voxelPos + mask * halfSize
         local scaledPos: vector = cornerPos * 1 / 100
 
-        sampleCornerBuffer[i] = PLANET_RADIUS - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 50
+        sampleCornerBuffer[i] = PLANET_RADIUS - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 150
     end
 
     return sampleCornerBuffer
@@ -239,13 +238,16 @@ local function canSubdivide(
     lod: number,
     highestLOD: number,
     globalViewerPosition: vector
-): boolean
-    if lod >= highestLOD then return false end
+): (boolean, boolean)
+    if lod >= highestLOD then return false, false end
     local globalVoxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
     local distanceStuds: vector = vector.abs(globalVoxelPos - globalViewerPosition)
     local distanceVoxels: vector = distanceStuds / voxelSize
+    local difference: vector = vector.create(SUBDIVIDE_VOXEL_DIST, SUBDIVIDE_VOXEL_DIST, SUBDIVIDE_VOXEL_DIST) - distanceVoxels
+    local canDivide: boolean = difference.x >= 0 and difference.y >= 0 and difference.z >= 0
+    local canSubdivideOnBorder: boolean = difference.x >= -2 and difference.y >= -2 and difference.z >= -2 and not canDivide
 
-    return distanceVoxels.x <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.y <= SUBDIVIDE_VOXEL_DIST and distanceVoxels.z <= SUBDIVIDE_VOXEL_DIST
+    return canDivide, canSubdivideOnBorder
     --return vector.magnitude(distanceVoxels) <= SUBDIVIDE_VOXEL_DIST
 end
 
@@ -352,10 +354,12 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
                             local thisVoxelSize: number = self._voxelSizes[lod]
                             local voxelWorldPos: vector = getVoxelWorldPosition(voxel, thisVoxelSize, renderAreaPos)
                             local dist: number = vector.magnitude(voxelWorldPos - self.ViewerPosition)
+                            local canDivide: boolean, canDivideAndRender: boolean =
+                                canSubdivide(voxel, thisVoxelSize, renderAreaPos, lod, 10, self.ViewerPosition)
 
-                            if canSubdivide(voxel, thisVoxelSize, renderAreaPos, lod, 10, self.ViewerPosition) then
-                                subdivideAndAddToProcessQueue(self, voxel, lod)
-                            elseif not self.GeometryContainer._faceStorage[lod][voxel] then
+                            if canDivide or canDivideAndRender then subdivideAndAddToProcessQueue(self, voxel, lod) end
+
+                            if (not canDivide or canDivideAndRender) and not self.GeometryContainer._faceStorage[lod][voxel] then
                                 local caseCode: number = sampleCaseCode(voxel, thisVoxelSize, renderAreaPos)
                                 if dist <= RENDER_RADIUS and caseCode ~= 0 and caseCode ~= 255 then
                                     table.insert(self._voxelsToRender[lod], voxel)
@@ -609,7 +613,7 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     self._renderArea.Max = renderMax
     local renderAreaPos: vector = vector.create(self.RenderAreaCFrame.X, self.RenderAreaCFrame.Y, self.RenderAreaCFrame.Z)
 
-    print("RenderMin:", renderMin, "RenderMax", renderMax)
+    print("RenderAreaSize:", renderMax - renderMin)
     local cleanCount: number = 0
 
     --Find voxels we can cleanup for all relevant LODs
@@ -623,9 +627,10 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
 
             local parentVoxel: vector = self.GeometryContainer:GetLowLodVoxelPos(voxel, 1)
             local parentVoxelSize: number = self._voxelSizes[lod - 1]
-            local canParentSubdivide: boolean = canSubdivide(parentVoxel, parentVoxelSize, renderAreaPos, lod - 1, 10, posOnPlanet)
+            local canParentSubdivide: boolean, canParentBorderDivide: boolean =
+                canSubdivide(parentVoxel, parentVoxelSize, renderAreaPos, lod - 1, 10, posOnPlanet)
             local canBeSubdivided: boolean = canSubdivide(voxel, voxelSize, renderAreaPos, lod, 10, posOnPlanet)
-            local shouldCleanup: boolean = not inBounds or canBeSubdivided or not canParentSubdivide
+            local shouldCleanup: boolean = not inBounds or canBeSubdivided or (not canParentSubdivide and not canParentBorderDivide)
 
             if shouldCleanup then
                 --BinaryArray.BinaryInsert(self._voxelsToCleanup[lod], voxel, voxelEval)
@@ -634,8 +639,6 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
             end
         end
     end
-
-    print("VoxelsToClean:", cleanCount)
 
     self._processX = renderMin.x
     self._processY = renderMin.y

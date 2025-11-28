@@ -46,7 +46,7 @@ connection = RunService.Heartbeat:Connect(function(dt)
     local dist: number = vector.magnitude(lastPos - pos)
     local colliderDist: number = vector.magnitude(colliderLastPos - pos)
 
-    if dist >= 1 then
+    if dist >= 1 and not disable then
         local success: boolean = renderer:RenderAtLocation(pos)
         if success then lastPos = pos end
     end
