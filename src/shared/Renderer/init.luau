@@ -157,7 +157,7 @@ local function sampleVoxelCorners(voxel: vector, voxelSize: number, renderAreaPo
     for i: number = 0, 7 do
         local mask: vector = CORNER_MASK[i]
         local cornerPos: vector = voxelPos + mask * halfSize
-        local scaledPos: vector = cornerPos * 1 / 200
+        local scaledPos: vector = cornerPos * 1 / 100
 
         sampleCornerBuffer[i] = PLANET_RADIUS - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 50
     end

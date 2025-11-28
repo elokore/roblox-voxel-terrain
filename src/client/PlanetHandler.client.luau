@@ -17,7 +17,7 @@ local LocalPlayer: Player = Players.LocalPlayer
 local LOD: number = 10
 local renderer: Renderer = Renderer.new(16, LOD, CFrame.new())
 local collider: TerrainCollider = TerrainCollider.new(renderer)
-collider:SetColliderSize(4, LOD)
+collider:SetColliderSize(2, LOD)
 
 local agent: Part = Instance.new("Part")
 agent.Name = "Agent"
@@ -29,6 +29,7 @@ agent.CFrame = CFrame.new(0, 20005, 0)
 agent.Parent = workspace
 
 local lastPos: vector = vector.zero
+local colliderLastPos: vector = vector.zero
 local cf = CFrame.lookAlong(Vector3.zero, -Vector3.yAxis)
 
 local connection
@@ -43,21 +44,12 @@ connection = RunService.Heartbeat:Connect(function(dt)
     local camera: Camera = workspace.CurrentCamera
     local pos: vector = vector.create(playerPos.X, playerPos.Y, playerPos.Z)
     local dist: number = vector.magnitude(lastPos - pos)
+    local colliderDist: number = vector.magnitude(colliderLastPos - pos)
 
     if dist >= 1 then
-        -- if LocalPlayer.Character then
-        --     local playerPos: Vector3 = LocalPlayer.Character:GetPivot().Position
-        --     debug.profilebegin("CollisionSurfaces")
-        --     renderer:UpdateCollisionSurfaces(vector.create(playerPos.X, playerPos.Y, playerPos.Z))
-        --     debug.profileend()
-        -- end
-
-        local success: boolean = true
-        if not disable then
-            success = renderer:RenderAtLocation(pos)
-            disable = true
-        end
-        collider:UpdateCollider(pos)
+        local success: boolean = renderer:RenderAtLocation(pos)
         if success then lastPos = pos end
     end
+
+    if colliderDist >= 1 then collider:UpdateCollider(pos) end
 end)

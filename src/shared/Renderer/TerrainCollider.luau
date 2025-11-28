@@ -10,7 +10,7 @@ type Renderer = Types.Renderer
 export type TerrainCollider = Types.TerrainCollider
 type TriangleModel = TriangleDrawer.TriangleModel
 
-local VOXELS_PER_FRAME: number = 1
+local VOXELS_PER_FRAME: number = 2
 
 local TerrainCollider = {}
 TerrainCollider.__index = TerrainCollider
