@@ -1,5 +1,6 @@
 --!strict
 -- < Services > --
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -10,6 +11,7 @@ local Renderer = require(ReplicatedStorage.Shared.Renderer)
 type Renderer = Renderer.Renderer
 
 -- < Variables > --
+local LocalPlayer: Player = Players.LocalPlayer
 local LOD: number = 10
 local renderer: Renderer = Renderer.new(16, LOD, CFrame.new())
 
@@ -27,15 +29,24 @@ local cf = CFrame.lookAlong(Vector3.zero, -Vector3.yAxis)
 
 local connection
 connection = RunService.Heartbeat:Connect(function(dt)
+    if not LocalPlayer.Character then return end
     -- cf *= CFrame.Angles(math.rad(5) * dt, 0, 0)
     -- agent.CFrame = cf * CFrame.new(0, 0, 20005)
     --local pos: vector = vector.create(agent.CFrame.X, agent.CFrame.Y, agent.CFrame.Z)
 
+    local playerPos: Vector3 = LocalPlayer.Character:GetPivot().Position
     local camera: Camera = workspace.CurrentCamera
-    local pos: vector = vector.create(camera.CFrame.X, camera.CFrame.Y, camera.CFrame.Z)
+    local pos: vector = vector.create(playerPos.X, playerPos.Y, playerPos.Z)
     local dist: number = vector.magnitude(lastPos - pos)
 
     if dist >= 1 then
+        -- if LocalPlayer.Character then
+        --     local playerPos: Vector3 = LocalPlayer.Character:GetPivot().Position
+        --     debug.profilebegin("CollisionSurfaces")
+        --     renderer:UpdateCollisionSurfaces(vector.create(playerPos.X, playerPos.Y, playerPos.Z))
+        --     debug.profileend()
+        -- end
+
         local success: boolean = renderer:RenderAtLocation(pos)
         if success then lastPos = pos end
     end
