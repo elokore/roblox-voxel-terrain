@@ -5,54 +5,19 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 -- < Imports > --
+local TerrainCollider = require(script.TerrainCollider)
 local TriangleDrawer = require(script.TriangleDrawer)
 local TriTables = require(script.Triangulations)
 local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
+local Types = require(script.Types)
 
 -- < Types > --
-type TriangleModel = TriangleDrawer.TriangleModel
+type CollisionFace = Types.CollisionFace
 type CellData = TriTables.CellData
 type GeometryContainer = GeometryContainer.GeometryContainer
-
-type RendererMeta = {
-    __index: RendererMeta,
-    RenderVoxel: (self: Renderer, voxel: vector, lod: number, isCollisionVoxel: boolean?, recycleBin: { TriangleModel }?) -> number,
-    GetVertexId: (self: Renderer, voxel: vector, lod: number, vertexPos: vector, vertex: number, cornerBuffer: { number }) -> number,
-    GetNearestVoxel: (self: Renderer, globalPosition: vector, lod: number) -> vector,
-    GetRenderAreaBoundingBox: (self: Renderer, areaCenter: vector, lod: number) -> (vector, vector),
-    UpdateCollisionSurfaces: (self: Renderer, at: vector) -> (),
-    RenderAtLocation: (self: Renderer, position: vector) -> boolean,
-}
-
-export type RenderState = "Idle" | "Recycling" | "Rendering" | "Processing"
-export type Renderer = typeof(setmetatable(
-    {} :: {
-        VoxelSize: number,
-        RenderAreaCFrame: CFrame,
-        GeometryContainer: GeometryContainer,
-        State: RenderState,
-        TargetLod: number,
-        ViewerPosition: vector,
-        _renderArea: { Min: vector, Max: vector },
-        _collisionParts: { TriangleModel },
-        _collisionPartsRecycleBin: { TriangleModel },
-        _processFrontIndex: number,
-        _processBackIndex: number,
-        _voxelsToProcess: { number },
-        _voxelsToCleanup: { [number]: { vector } },
-        _renderListLod: number,
-        _voxelsToRender: { [number]: { vector } },
-        _recycleVertices: { number },
-        _mesh: EditableMesh,
-        _meshPart: MeshPart?,
-        _voxelSizes: { number },
-        _renderStep: RBXScriptConnection,
-        _processX: number,
-        _processY: number,
-        _processZ: number,
-    },
-    {} :: RendererMeta
-))
+export type Renderer = Types.Renderer
+type RenderState = Types.RenderState
+type Collider = Types.TerrainCollider
 
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
@@ -390,12 +355,9 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
 
                             if canSubdivide(voxel, thisVoxelSize, renderAreaPos, lod, 10, self.ViewerPosition) then
                                 subdivideAndAddToProcessQueue(self, voxel, lod)
-                            elseif dist <= RENDER_RADIUS then
+                            elseif not self.GeometryContainer._faceStorage[lod][voxel] then
                                 local caseCode: number = sampleCaseCode(voxel, thisVoxelSize, renderAreaPos)
-                                local distToPlayer: number = vector.magnitude(voxelWorldPos - self.ViewerPosition)
-
-                                if lod == 10 and distToPlayer <= 45 then self:RenderVoxel(voxel, lod, true) end
-                                if not self.GeometryContainer._faceStorage[lod][voxel] and caseCode ~= 0 and caseCode ~= 255 then
+                                if dist <= RENDER_RADIUS and caseCode ~= 0 and caseCode ~= 255 then
                                     table.insert(self._voxelsToRender[lod], voxel)
                                 end
                             end
@@ -423,11 +385,6 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
             end
 
             debug.profileend()
-
-            for x = #self._collisionPartsRecycleBin, 1, -1 do
-                self._collisionPartsRecycleBin[x]:Destroy()
-                table.remove(self._collisionPartsRecycleBin, x)
-            end
 
             self.State = "Rendering"
             self._renderListLod = self.TargetLod
@@ -470,6 +427,7 @@ function Renderer.new(voxelSize: number, highestLOD: number, renderAreaCFrame: C
                         part.Material = Enum.Material.Grass
                         part.BrickColor = BrickColor.new("Parsley green")
                         part.Anchored = true
+                        part.CanCollide = false
                         part.Parent = workspace
                         self._meshPart = part
                         print("Created mesh part")
@@ -593,23 +551,23 @@ end
     @param voxel vector -- The location of the voxel grid position within the specified LOD
     @param lod number -- The level of detail of the voxel
 ]=]
-function RendererInstance:RenderVoxel(voxel: vector, lod: number, isCollisionVoxel: boolean?): number
+function RendererInstance:RenderVoxel(voxel: vector, lod: number, collider: Collider?): number
     local mesh: EditableMesh = self._mesh
     local voxelSize: number = self._voxelSizes[lod]
     local halfSize: number = voxelSize / 2
     local renderAreaPos: vector =
         vector.create(self.RenderAreaCFrame.Position.X, self.RenderAreaCFrame.Position.Y, self.RenderAreaCFrame.Position.Z)
     local voxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, renderAreaPos)
-
     local cornerBuffer: { number } = sampleVoxelCorners(voxel, voxelSize, renderAreaPos)
-
     local caseCode: number = getCaseCode(cornerBuffer)
+    if caseCode == 0 or caseCode == 255 then return caseCode end
+
     local cellClass: number = TriTables.regularCellClass[caseCode]
     local cellData: CellData = TriTables.regularCellData[cellClass]
     local vertexData: { number } = TriTables.regularVertexData[caseCode]
 
     self.GeometryContainer._codeStorage[lod][voxel] = caseCode
-    assert(self.GeometryContainer._faceStorage[lod][voxel] == nil or isCollisionVoxel, "Attempt to render over an existing voxel")
+    assert(self.GeometryContainer._faceStorage[lod][voxel] == nil or collider, "Attempt to render over an existing voxel")
 
     for x: number = 1, #cellData.vertexIndex, 3 do
         local v1: number = vertexData[cellData.vertexIndex[x]]
@@ -620,19 +578,14 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, isCollisionVox
         local v2Pos: vector = voxelPos + getVertexPositionSmooth(v2, cornerBuffer) * halfSize
         local v3Pos: vector = voxelPos + getVertexPositionSmooth(v3, cornerBuffer) * halfSize
 
-        if isCollisionVoxel then
-            local recycledFace: TriangleModel? = nil
-            local binSize: number = #self._collisionPartsRecycleBin
+        if collider then
+            local triangleNumber: number = (x // 3) + 1
+            local recycledFace: CollisionFace? = collider:RecycleFace()
+            local collisionFace: CollisionFace = TriangleDrawer.DrawTriangle(v1Pos, v2Pos, v3Pos, Enum.Material.SmoothPlastic, recycledFace)
+            collisionFace.Parent = collider.Container
 
-            if binSize > 0 then
-                recycledFace = self._collisionPartsRecycleBin[binSize]
-                table.remove(self._collisionPartsRecycleBin, binSize)
-            end
-
-            local collisionFace: TriangleModel =
-                TriangleDrawer.DrawTriangle(v1Pos, v2Pos, v3Pos, Color3.new(), Enum.Material.SmoothPlastic, recycledFace)
-            collisionFace.Parent = workspace
-            table.insert(self._collisionParts, collisionFace)
+            local colFaceId: number = collider:GetCollisionFaceId(voxel, triangleNumber)
+            collider.RenderedFaces[colFaceId] = collisionFace
         else
             local vid1: number = self:GetVertexId(voxel, lod, v1Pos, v1, cornerBuffer)
             local vid2: number = self:GetVertexId(voxel, lod, v2Pos, v2, cornerBuffer)
@@ -644,31 +597,6 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, isCollisionVox
     end
 
     return caseCode
-end
-
-function RendererInstance:UpdateCollisionSurfaces(at: vector)
-    local nearestVoxel: vector = self:GetNearestVoxel(at, 10)
-    local voxelSize: number = self._voxelSizes[10]
-    local renderAreaPos: vector = vector.create(self.RenderAreaCFrame.X, self.RenderAreaCFrame.Y, self.RenderAreaCFrame.Z)
-    local recycleBin: { TriangleModel } = self._collisionParts
-    self._collisionParts = {}
-
-    for y = -2, 2 do
-        for z = -2, 2 do
-            for x = -2, 2 do
-                local coordOffset: vector = vector.create(x, y, z)
-                local voxel: vector = nearestVoxel + coordOffset
-                local caseCode: number = sampleCaseCode(voxel, voxelSize, renderAreaPos)
-                local canRender: boolean = caseCode ~= 0 and caseCode ~= 255
-
-                if canRender then self:RenderVoxel(voxel, 10, true, recycleBin) end
-            end
-        end
-    end
-
-    for _, object in recycleBin do
-        object:Destroy()
-    end
 end
 
 function RendererInstance:RenderAtLocation(position: vector): boolean
@@ -683,10 +611,6 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
 
     print("RenderMin:", renderMin, "RenderMax", renderMax)
     local cleanCount: number = 0
-
-    local tempStorage = self._collisionPartsRecycleBin
-    self._collisionPartsRecycleBin = self._collisionParts
-    self._collisionParts = tempStorage
 
     --Find voxels we can cleanup for all relevant LODs
     for lod: number = startingLOD, 10 do

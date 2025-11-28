@@ -6,14 +6,18 @@ local RunService = game:GetService("RunService")
 
 -- < Imports > --
 local Renderer = require(ReplicatedStorage.Shared.Renderer)
+local TerrainCollider = require(ReplicatedStorage.Shared.Renderer.TerrainCollider)
 
 -- < Types > --
 type Renderer = Renderer.Renderer
+type TerrainCollider = TerrainCollider.TerrainCollider
 
 -- < Variables > --
 local LocalPlayer: Player = Players.LocalPlayer
 local LOD: number = 10
 local renderer: Renderer = Renderer.new(16, LOD, CFrame.new())
+local collider: TerrainCollider = TerrainCollider.new(renderer)
+collider:SetColliderSize(4, LOD)
 
 local agent: Part = Instance.new("Part")
 agent.Name = "Agent"
@@ -28,6 +32,7 @@ local lastPos: vector = vector.zero
 local cf = CFrame.lookAlong(Vector3.zero, -Vector3.yAxis)
 
 local connection
+local disable: boolean = false
 connection = RunService.Heartbeat:Connect(function(dt)
     if not LocalPlayer.Character then return end
     -- cf *= CFrame.Angles(math.rad(5) * dt, 0, 0)
@@ -47,7 +52,12 @@ connection = RunService.Heartbeat:Connect(function(dt)
         --     debug.profileend()
         -- end
 
-        local success: boolean = renderer:RenderAtLocation(pos)
+        local success: boolean = true
+        if not disable then
+            success = renderer:RenderAtLocation(pos)
+            disable = true
+        end
+        collider:UpdateCollider(pos)
         if success then lastPos = pos end
     end
 end)

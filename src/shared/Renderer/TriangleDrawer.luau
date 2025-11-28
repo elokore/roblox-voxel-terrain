@@ -14,6 +14,8 @@ export type TriangleModel = Model & {
 ---- < Variables > ----
 local module = {}
 local wedge: BasePart = Instance.new("WedgePart")
+wedge.CastShadow = false
+wedge.Transparency = 1
 wedge.Material = Enum.Material.SmoothPlastic
 wedge.Anchored = true
 
@@ -21,7 +23,7 @@ wedge.Anchored = true
 	Draws a triangle with the tree points given.
 	Each triangle is made using two right triangle meshes
 ]]
-function module.DrawTriangle(a: vector, b: vector, c: vector, color: Color3, material: Enum.Material, reuse: TriangleModel?): TriangleModel
+function module.DrawTriangle(a: vector, b: vector, c: vector, material: Enum.Material, reuse: TriangleModel?): TriangleModel
     local w1: BasePart = if reuse then reuse.Wedge1 else wedge:Clone()
     local w2: BasePart = if reuse then reuse.Wedge2 else wedge:Clone()
 
@@ -46,6 +48,7 @@ function module.DrawTriangle(a: vector, b: vector, c: vector, color: Color3, mat
     local w2CFrame: CFrame = CFrame.fromMatrix((a + c) * 0.5, -right, up, -back)
     local w1Size: vector = vector.create(0, height, math.abs(vector.dot(ab, back)))
     local w2Size: vector = vector.create(0, height, math.abs(vector.dot(ac, back)))
+    local model: TriangleModel = if reuse then reuse else Instance.new("Model") :: TriangleModel
 
     w1.Size = w1Size
     w2.Size = w2Size
@@ -53,20 +56,21 @@ function module.DrawTriangle(a: vector, b: vector, c: vector, color: Color3, mat
     w1.CFrame = w1CFrame
     w2.CFrame = w2CFrame
 
-    w1.Color = color
-    w2.Color = color
-
     w1.Material = material
     w2.Material = material
 
-    w1.Name = "Wedge1"
-    w2.Name = "Wedge2"
+    if not reuse then
+        w1.Color = Color3.new()
+        w2.Color = Color3.new()
 
-    local model: Model = if reuse then reuse else Instance.new("Model")
-    model.Name = "Triangle"
+        w1.Name = "Wedge1"
+        w2.Name = "Wedge2"
 
-    w1.Parent = model
-    w2.Parent = model
+        model.Name = "Triangle"
+
+        w1.Parent = model
+        w2.Parent = model
+    end
 
     return model
 end
