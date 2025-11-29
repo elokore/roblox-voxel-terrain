@@ -1,6 +1,4 @@
 --!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TableUtil = require(ReplicatedStorage.Packages.TableUtil)
 --================================================================================
 --
 -- The Transvoxel Algorithm look-up tables

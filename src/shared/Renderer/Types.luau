@@ -44,7 +44,7 @@ export type RenderState = "Idle" | "Recycling" | "Rendering" | "Processing"
 export type Renderer = typeof(setmetatable(
     {} :: {
         VoxelSize: number,
-        RenderAreaCFrame: CFrame,
+        TerrainCFrame: CFrame,
         GeometryContainer: GeometryContainer,
         State: RenderState,
         TargetLod: number,
