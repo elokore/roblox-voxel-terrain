@@ -323,67 +323,59 @@ function Renderer.new(voxelSize: number, highestLOD: number, TerrainCFrame: CFra
         if self.State == "Processing" then
             debug.profilebegin("Processing")
             local processCount: number = 0
-            local resumeX: number = self._processX
-            local resumeY: number = self._processY
-            local resumeZ: number = self._processZ
-            local isResuming: boolean = true
+            local progress: number = self._processX
 
-            for y = resumeY, self._renderArea.Max.y do
-                self._processY = y
-                local zStart: number = if isResuming then resumeZ else self._renderArea.Max.z
+            local areaSize: vector = self._renderArea.Max - self._renderArea.Min + vector.one
+            local totalVoxels: number = areaSize.x * areaSize.y * areaSize.z
 
-                for z = zStart, self._renderArea.Min.z, -1 do
-                    self._processZ = z
-                    local xStart: number = if isResuming then resumeX else self._renderArea.Min.x
-                    isResuming = false
+            for i = progress, totalVoxels do
+                self._processX = i
 
-                    for x = xStart, self._renderArea.Max.x do
-                        self._processX = x
-                        local v: vector = vector.create(x, y, z)
+                local v: vector = vector.create(
+                    self._renderArea.Min.x + (i % areaSize.x),
+                    self._renderArea.Min.y + math.floor(i / (areaSize.x * areaSize.z)),
+                    self._renderArea.Max.z - (math.floor(i / areaSize.x) % areaSize.z)
+                )
 
-                        if self._processFrontIndex == 0 and self._processBackIndex == 0 then
-                            table.insert(self._voxelsToProcess, getVoxelID(v, self.TargetLod))
-                            self._processFrontIndex = 1
-                            self._processBackIndex = 1
-                        end
+                if self._processFrontIndex == 0 and self._processBackIndex == 0 then
+                    table.insert(self._voxelsToProcess, getVoxelID(v, self.TargetLod))
+                    self._processFrontIndex = 1
+                    self._processBackIndex = 1
+                end
 
-                        local maxIterations: number = VOXELS_PROCESS_PER_FRAME - processCount
-                        for _ = 1, maxIterations do
-                            local voxelID: number = self._voxelsToProcess[self._processFrontIndex]
-                            local voxel: vector, lod: number = getVoxelFromID(voxelID)
-                            local thisVoxelSize: number = self._voxelSizes[lod]
-                            local voxelWorldPos: vector = getVoxelWorldPosition(voxel, thisVoxelSize, terrainPos)
-                            local dist: number = vector.magnitude(voxelWorldPos - self.ViewerPosition)
-                            local canDivide: boolean, canDivideAndRender: boolean =
-                                canSubdivide(voxel, thisVoxelSize, terrainPos, lod, 10, self.ViewerPosition)
+                local maxIterations: number = VOXELS_PROCESS_PER_FRAME - processCount
+                for _ = 1, maxIterations do
+                    local voxelID: number = self._voxelsToProcess[self._processFrontIndex]
+                    local voxel: vector, lod: number = getVoxelFromID(voxelID)
+                    local thisVoxelSize: number = self._voxelSizes[lod]
+                    local voxelWorldPos: vector = getVoxelWorldPosition(voxel, thisVoxelSize, terrainPos)
+                    local dist: number = vector.magnitude(voxelWorldPos - self.ViewerPosition)
+                    local canDivide: boolean, canDivideAndRender: boolean =
+                        canSubdivide(voxel, thisVoxelSize, terrainPos, lod, 10, self.ViewerPosition)
 
-                            if canDivide or canDivideAndRender then subdivideAndAddToProcessQueue(self, voxel, lod) end
+                    if canDivide or canDivideAndRender then subdivideAndAddToProcessQueue(self, voxel, lod) end
 
-                            if (not canDivide or canDivideAndRender) and not self.GeometryContainer._faceStorage[lod][voxel] then
-                                local caseCode: number = sampleCaseCode(voxel, thisVoxelSize, terrainPos)
-                                if dist <= RENDER_RADIUS and caseCode ~= 0 and caseCode ~= 255 then
-                                    table.insert(self._voxelsToRender[lod], voxel)
-                                end
-                            end
+                    if (not canDivide or canDivideAndRender) and not self.GeometryContainer._faceStorage[lod][voxel] then
+                        local caseCode: number = sampleCaseCode(voxel, thisVoxelSize, terrainPos)
+                        if dist <= RENDER_RADIUS and caseCode ~= 0 and caseCode ~= 255 then table.insert(self._voxelsToRender[lod], voxel) end
+                    end
 
-                            self._voxelsToProcess[self._processFrontIndex] = nil
-                            self._processFrontIndex += 1
-                            processCount += 1
+                    self._voxelsToProcess[self._processFrontIndex] = nil
+                    self._processFrontIndex += 1
+                    processCount += 1
 
-                            local isFinishedSubdividing: boolean = self._processFrontIndex > self._processBackIndex
-                            if isFinishedSubdividing then
-                                self._processFrontIndex = 0
-                                self._processBackIndex = 0
-                                self._processX += 1 --Ensure we dont reprocess this voxel
-                            end
+                    local isFinishedSubdividing: boolean = self._processFrontIndex > self._processBackIndex
+                    if isFinishedSubdividing then
+                        self._processFrontIndex = 0
+                        self._processBackIndex = 0
+                        self._processX += 1 --Ensure we dont reprocess this voxel
+                    end
 
-                            if processCount >= VOXELS_PROCESS_PER_FRAME then
-                                debug.profileend()
-                                return
-                            elseif isFinishedSubdividing then
-                                break
-                            end
-                        end
+                    if processCount >= VOXELS_PROCESS_PER_FRAME then
+                        debug.profileend()
+                        return
+                    elseif isFinishedSubdividing then
+                        break
                     end
                 end
             end

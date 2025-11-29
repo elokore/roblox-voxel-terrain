@@ -229,62 +229,53 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
     end
 
     local step: RBXScriptConnection
-    local progressX: number = chunkMin.x
-    local progressY: number = chunkMin.y
-    local progressZ: number = chunkMax.z -- Set to max Z because -Z is forward in roblox
+    local chunkSize: vector = chunkMax - chunkMin + vector.one
+    local totalVoxelsToProcess: number = chunkSize.x * chunkSize.y * chunkSize.z
+
+    local progress: number = 1
 
     local childrenToProcess: { number } = {}
     local frontIndex: number = 0
     local backIndex: number = 0
 
     step = RunService.Heartbeat:Connect(function()
-        local resumeX: number = progressX
-        local resumeY: number = progressY
-        local resumeZ: number = progressZ
-        local isResuming: boolean = true
         local processCount: number = 0
 
         -- Iterate over the render area.
-        -- There's a limit on iterations per frame. Track progress so we can resume loops next frame
-        for y = resumeY, chunkMax.y do
-            progressY = y
-            local startZ: number = if isResuming then resumeZ else chunkMax.z
-            for z = startZ, chunkMin.z, -1 do
-                progressZ = z
-                local startX: number = if isResuming then resumeX else chunkMin.x
-                for x = startX, chunkMax.x do
-                    progressX = x
-                    isResuming = false
+        for i: number = progress, totalVoxelsToProcess do
+            progress = i
+            local mainVoxel: vector = vector.create(
+                chunkMin.x + (i % chunkSize.x),
+                chunkMin.y + math.floor(i / (chunkSize.x * chunkSize.z)),
+                chunkMax.z - (math.floor(i / chunkSize.x) % chunkSize.z)
+            )
 
-                    local mainVoxel: vector = vector.create(x, y, z)
-                    if frontIndex == 0 and backIndex == 0 then
-                        childrenToProcess[1] = getVoxelID(mainVoxel, startLOD)
-                        frontIndex = 1
-                        backIndex = 1
-                    end
+            if frontIndex == 0 and backIndex == 0 then
+                childrenToProcess[1] = getVoxelID(mainVoxel, startLOD)
+                frontIndex = 1
+                backIndex = 1
+            end
 
-                    local maxIterations: number = VOXELS_PROCESS_PER_FRAME - processCount
-                    for i = 1, maxIterations do
-                        local voxelID: number = childrenToProcess[frontIndex]
-                        local voxel: vector, lod: number = getVoxelFromID(voxelID)
-                        backIndex = processVoxel(self, voxel, lod, viewerPosition, childrenToProcess, backIndex)
-                        childrenToProcess[frontIndex] = nil
-                        frontIndex += 1
-                        processCount += 1
+            local maxIterations: number = VOXELS_PROCESS_PER_FRAME - processCount
+            for _ = 1, maxIterations do
+                local voxelID: number = childrenToProcess[frontIndex]
+                local voxel: vector, lod: number = getVoxelFromID(voxelID)
+                backIndex = processVoxel(self, voxel, lod, viewerPosition, childrenToProcess, backIndex)
+                childrenToProcess[frontIndex] = nil
+                frontIndex += 1
+                processCount += 1
 
-                        local allChildrenProcessed: boolean = frontIndex > backIndex
-                        if allChildrenProcessed then
-                            frontIndex = 0
-                            backIndex = 0
-                            progressX += 1
-                        end
+                local allChildrenProcessed: boolean = frontIndex > backIndex
+                if allChildrenProcessed then
+                    frontIndex = 0
+                    backIndex = 0
+                    progress += 1
+                end
 
-                        if processCount >= VOXELS_PROCESS_PER_FRAME then
-                            return
-                        elseif allChildrenProcessed then
-                            break
-                        end
-                    end
+                if processCount >= VOXELS_PROCESS_PER_FRAME then
+                    return
+                elseif allChildrenProcessed then
+                    break
                 end
             end
         end
