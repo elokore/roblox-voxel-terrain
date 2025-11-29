@@ -2,9 +2,8 @@
 -- < Types > --
 type GeometryContainerMeta = {
     __index: GeometryContainerMeta,
-    GetCoordinateRange: (self: GeometryContainer, lod: number) -> (vector, vector),
-    GetLowLodVoxelPos: (self: GeometryContainer, pos: vector, levelsLower: number?) -> vector,
-    GetHighLodVoxelPos: (self: GeometryContainer, pos: vector, levelsHigher: number?) -> vector,
+    GetAncestorVoxel: (self: GeometryContainer, pos: vector, levelsLower: number?) -> vector,
+    GetDescendantVoxel: (self: GeometryContainer, pos: vector, levelsHigher: number?) -> vector,
     GetVertexId: (self: GeometryContainer, vertexLocation: number, voxelPos: vector, lod: number) -> number?,
     StoreVertexId: (self: GeometryContainer, vertexId: number, vertexLocation: number, voxelPos: vector, lod: number) -> (),
     RemoveVertexId: (self: GeometryContainer, vertexLocation: number, voxelPos: vector, lod: number) -> (),
@@ -63,7 +62,7 @@ end
     @return The position of the voxel in a lower level of detail
     @within GeometryContainer
 ]=]
-function GeometryContainerInstance:GetLowLodVoxelPos(pos: vector, levelsLower: number?): vector
+function GeometryContainerInstance:GetAncestorVoxel(pos: vector, levelsLower: number?): vector
     return vector.floor(pos / (2 ^ (levelsLower or 1)))
 end
 
@@ -77,20 +76,8 @@ end
     @return The position of the child voxel that fits in corner 0 of the parent
     @within GeometryContainer
 ]=]
-function GeometryContainerInstance:GetHighLodVoxelPos(pos: vector, levelsHigher: number?): vector
+function GeometryContainerInstance:GetDescendantVoxel(pos: vector, levelsHigher: number?): vector
     return pos * (2 ^ (levelsHigher or 1)) + Z_CORRECTION
-end
-
---[=[
-    Calculates the range of voxel coordinates for a LOD
-
-    @param lod number -- The level of detail to calculate the range for
-    @return vector, vector -- Returns a tuple, the first vector being the lower bound of the range and second the high bound. Both bounds are inclusive
-    @within GeometryContainer
-]=]
-function GeometryContainerInstance:GetCoordinateRange(lod: number): (vector, vector)
-    local upperBound: number = (2 ^ lod) - 1
-    return vector.zero, vector.create(upperBound, upperBound, upperBound)
 end
 
 --[=[

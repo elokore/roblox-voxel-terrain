@@ -253,7 +253,7 @@ end
 
 local function subdivideAndAddToProcessQueue(self: Renderer, voxel: vector, lod: number)
     local childLod: number = lod + 1
-    local child0: vector = self.GeometryContainer:GetHighLodVoxelPos(voxel, 1)
+    local child0: vector = self.GeometryContainer:GetDescendantVoxel(voxel, 1)
     local child0ID: number = getVoxelID(child0, childLod)
     local child1ID: number = getVoxelID(child0 + vector.create(1, 0, 0), childLod)
     local child2ID: number = getVoxelID(child0 + vector.create(0, 0, -1), childLod)
@@ -624,7 +624,7 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
             local dist: number = vector.magnitude(voxelWorldPos - posOnPlanet)
             local inBounds: boolean = dist <= RENDER_RADIUS
 
-            local parentVoxel: vector = self.GeometryContainer:GetLowLodVoxelPos(voxel, 1)
+            local parentVoxel: vector = self.GeometryContainer:GetAncestorVoxel(voxel, 1)
             local parentVoxelSize: number = self._voxelSizes[lod - 1]
             local canParentSubdivide: boolean, canParentBorderDivide: boolean =
                 canSubdivide(parentVoxel, parentVoxelSize, terrainPos, lod - 1, 10, posOnPlanet)
