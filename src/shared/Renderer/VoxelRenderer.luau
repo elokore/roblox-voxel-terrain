@@ -257,6 +257,7 @@ function VoxelRenderer:Render(
         step = RunService.Heartbeat:Connect(function()
             local processCount: number = 0
 
+            -- Render these voxels first to cover any holes that cleaning old voxels may create
             if mode == "RenderFirst" then
                 for lod: number = currentFirstRenderLOD, self.MaxLOD do
                     currentFirstRenderLOD = lod
@@ -273,13 +274,13 @@ function VoxelRenderer:Render(
                     end
                 end
 
-                print("There were", renderFirstSize, "voxels in render first")
                 mode = "Cleanup"
             end
 
             if mode == "Cleanup" then
                 for lod: number = currentCleanupLOD, self.MaxLOD do
                     currentCleanupLOD = lod
+
                     for i: number = #cleaningList[lod], 1, -1 do
                         local voxel: vector = cleaningList[lod][i]
                         self:CleanupVoxel(voxel, lod)
