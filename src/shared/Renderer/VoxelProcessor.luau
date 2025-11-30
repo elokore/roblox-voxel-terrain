@@ -3,7 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
-local TriTables = require(ReplicatedStorage.Shared.Renderer.Triangulations)
+local Helper = require(script.Parent.Helper)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Types = require(ReplicatedStorage.Shared.Renderer.Types)
 
@@ -15,7 +15,6 @@ local PLANET_RADIUS: number = 20000
 local RENDER_RADIUS: number = 700
 local SUBDIVIDE_VOXEL_DIST: number = 8
 local VOXELS_PROCESS_PER_FRAME: number = 5000
-local CORNER_MASK: { vector } = TriTables.cornerMask
 local VoxelProcessor = {}
 VoxelProcessor.__index = VoxelProcessor
 
@@ -45,45 +44,6 @@ function VoxelProcessor.new(terrainCFrame: CFrame, baseVoxelSize: number, maxLod
     return self
 end
 
-local function getVoxelWorldPosition(voxel: vector, voxelSize: number, terrainPos: vector): vector
-    local halfSize: number = voxelSize / 2
-    return terrainPos + vector.create(halfSize, halfSize, halfSize) + voxel * vector.create(voxelSize, voxelSize, voxelSize)
-end
-
-local function getVoxelID(voxel: vector, lod: number): number
-    local sizeRangeXYZ: number = 20001
-    local sizeRangeLOD: number = 10
-
-    local x: number = voxel.x + 10000
-    local y: number = voxel.y + 10000
-    local z: number = voxel.z + 10000
-    lod -= 1
-
-    return (((x * sizeRangeXYZ + y) * sizeRangeXYZ + z) * sizeRangeLOD + lod)
-end
-
-local function getVoxelFromID(id: number): (vector, number)
-    local sizeRangeXYZ: number = 20001
-    local sizeRangeLOD: number = 10
-
-    local lod: number = id % sizeRangeLOD
-    lod += 1
-    id //= sizeRangeLOD
-
-    local z: number = id % sizeRangeXYZ
-    z -= 10000
-    id //= sizeRangeXYZ
-
-    local y: number = id % sizeRangeXYZ
-    y -= 10000
-    id //= sizeRangeXYZ
-
-    local x: number = id
-    x -= 10000
-
-    return vector.create(x, y, z), lod
-end
-
 --[[
     Checks if the voxel should be subdivided. Normally when a voxel is subdivided, that voxel cannot be
     rendered. However, for patching holes between LOD changes, along the border of an LOD change we allow
@@ -94,7 +54,7 @@ end
 function VoxelProcessor:CanSubdivide(voxel: vector, lod: number, viewerPosition: vector): (boolean, boolean)
     if lod >= self.MaxLOD then return false, false end
     local voxelSize: number = self._voxelSizes[lod]
-    local globalVoxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, self.TerrainPosition)
+    local globalVoxelPos: vector = Helper.GetVoxelWorldPosition(voxel, voxelSize, self.TerrainPosition)
     local distanceStuds: vector = vector.abs(globalVoxelPos - viewerPosition)
     local distanceVoxels: vector = distanceStuds / voxelSize
     local difference: vector = vector.create(SUBDIVIDE_VOXEL_DIST, SUBDIVIDE_VOXEL_DIST, SUBDIVIDE_VOXEL_DIST) - distanceVoxels
@@ -106,7 +66,7 @@ end
 
 function VoxelProcessor:ShouldCleanupVoxel(voxel: vector, lod: number, viewerPosition: vector): boolean
     local voxelSize: number = self._voxelSizes[lod]
-    local voxelWorldPos: vector = getVoxelWorldPosition(voxel, voxelSize, self.TerrainPosition)
+    local voxelWorldPos: vector = Helper.GetVoxelWorldPosition(voxel, voxelSize, self.TerrainPosition)
     local dist: number = vector.magnitude(voxelWorldPos - viewerPosition)
     local inBounds: boolean = dist <= RENDER_RADIUS
 
@@ -120,14 +80,14 @@ end
 local function subdivideAndAddToQueue(self: VoxelProcessor, voxel: vector, lod: number, childrenToProcess: { number }, backIndex: number): number
     local childLod: number = lod + 1
     local child0: vector = self.GeoContainer:GetDescendantVoxel(voxel)
-    local child0ID: number = getVoxelID(child0, childLod)
-    local child1ID: number = getVoxelID(child0 + vector.create(1, 0, 0), childLod)
-    local child2ID: number = getVoxelID(child0 + vector.create(0, 0, -1), childLod)
-    local child3ID: number = getVoxelID(child0 + vector.create(1, 0, -1), childLod)
-    local child4ID: number = getVoxelID(child0 + vector.create(0, 1, 0), childLod)
-    local child5ID: number = getVoxelID(child0 + vector.create(1, 1, 0), childLod)
-    local child6ID: number = getVoxelID(child0 + vector.create(0, 1, -1), childLod)
-    local child7ID: number = getVoxelID(child0 + vector.create(1, 1, -1), childLod)
+    local child0ID: number = Helper.GetVoxelID(child0, childLod)
+    local child1ID: number = Helper.GetVoxelID(child0 + vector.create(1, 0, 0), childLod)
+    local child2ID: number = Helper.GetVoxelID(child0 + vector.create(0, 0, -1), childLod)
+    local child3ID: number = Helper.GetVoxelID(child0 + vector.create(1, 0, -1), childLod)
+    local child4ID: number = Helper.GetVoxelID(child0 + vector.create(0, 1, 0), childLod)
+    local child5ID: number = Helper.GetVoxelID(child0 + vector.create(1, 1, 0), childLod)
+    local child6ID: number = Helper.GetVoxelID(child0 + vector.create(0, 1, -1), childLod)
+    local child7ID: number = Helper.GetVoxelID(child0 + vector.create(1, 1, -1), childLod)
 
     childrenToProcess[backIndex + 1] = child0ID
     childrenToProcess[backIndex + 2] = child1ID
@@ -140,35 +100,6 @@ local function subdivideAndAddToQueue(self: VoxelProcessor, voxel: vector, lod: 
     return backIndex + 8
 end
 
-local sampleCornerBuffer: { number } = {}
-local function sampleVoxelCorners(voxel: vector, voxelSize: number, terrainPos: vector): { number }
-    local voxelPos: vector = getVoxelWorldPosition(voxel, voxelSize, terrainPos)
-    local halfSize: number = voxelSize / 2
-
-    for i: number = 0, 7 do
-        local mask: vector = CORNER_MASK[i]
-        local cornerPos: vector = voxelPos + mask * halfSize
-        local scaledPos: vector = cornerPos * 1 / 200
-
-        sampleCornerBuffer[i] = PLANET_RADIUS - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 100
-    end
-
-    return sampleCornerBuffer
-end
-
-local function getCaseCode(corners: { number }): number
-    return bit32.bor(
-        bit32.band(bit32.rshift(math.floor(corners[0]), 31), 0x01),
-        bit32.band(bit32.rshift(math.floor(corners[1]), 30), 0x02),
-        bit32.band(bit32.rshift(math.floor(corners[2]), 29), 0x04),
-        bit32.band(bit32.rshift(math.floor(corners[3]), 28), 0x08),
-        bit32.band(bit32.rshift(math.floor(corners[4]), 27), 0x10),
-        bit32.band(bit32.rshift(math.floor(corners[5]), 26), 0x20),
-        bit32.band(bit32.rshift(math.floor(corners[6]), 25), 0x40),
-        bit32.band(bit32.rshift(math.floor(corners[7]), 24), 0x80)
-    )
-end
-
 local function processVoxel(
     self: VoxelProcessor,
     voxel: vector,
@@ -178,7 +109,7 @@ local function processVoxel(
     backIndex: number
 ): number
     local voxelSize: number = self._voxelSizes[lod]
-    local voxelWorldPos: vector = getVoxelWorldPosition(voxel, voxelSize, self.TerrainPosition)
+    local voxelWorldPos: vector = Helper.GetVoxelWorldPosition(voxel, voxelSize, self.TerrainPosition)
     local dist: number = vector.magnitude(voxelWorldPos - viewerPosition)
     local canDivide: boolean, canDivideAndRender: boolean = self:CanSubdivide(voxel, lod, viewerPosition)
     local isAlreadyRendered: boolean = self.GeoContainer._faceStorage[lod][voxel] ~= nil
@@ -188,7 +119,7 @@ local function processVoxel(
     if canDivide or canDivideAndRender then newBackIndex = subdivideAndAddToQueue(self, voxel, lod, childrenToProcess, backIndex) end
 
     if canRender and not isAlreadyRendered and dist <= RENDER_RADIUS then
-        local caseCode: number = getCaseCode(sampleVoxelCorners(voxel, voxelSize, self.TerrainPosition))
+        local caseCode: number = Helper.GetCaseCode(Helper.SampleVoxelCorners(voxel, voxelSize, self.TerrainPosition, PLANET_RADIUS))
         local isEmpty: boolean = caseCode == 0 or caseCode == 255
         if not isEmpty then table.insert(self._renderList[lod], voxel) end
     end
@@ -230,7 +161,7 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
                 )
 
                 if frontIndex == 0 and backIndex == 0 then
-                    childrenToProcess[1] = getVoxelID(mainVoxel, startLOD)
+                    childrenToProcess[1] = Helper.GetVoxelID(mainVoxel, startLOD)
                     frontIndex = 1
                     backIndex = 1
                 end
@@ -238,7 +169,7 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
                 local maxIterations: number = VOXELS_PROCESS_PER_FRAME - processCount
                 for _ = 1, maxIterations do
                     local voxelID: number = childrenToProcess[frontIndex]
-                    local voxel: vector, lod: number = getVoxelFromID(voxelID)
+                    local voxel: vector, lod: number = Helper.GetVoxel(voxelID)
                     backIndex = processVoxel(self, voxel, lod, viewerPosition, childrenToProcess, backIndex)
                     childrenToProcess[frontIndex] = nil
                     frontIndex += 1
@@ -261,11 +192,6 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
 
             step:Disconnect()
             self.IsProcessing = false
-
-            for lod: number, list: { vector } in self._renderList do
-                print(`LOD {lod} Render Count: {#list}`)
-            end
-
             resolve()
         end)
     end)

@@ -8,7 +8,8 @@ local RunService = game:GetService("RunService")
 local TriangleDrawer = require(script.TriangleDrawer)
 local TriTables = require(script.Triangulations)
 local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
-local VoxelProcessor = require(ReplicatedStorage.Shared.Renderer.VoxelProcessor)
+local VoxelProcessor = require(script.VoxelProcessor)
+local VoxelRenderer = require(script.VoxelRenderer)
 local Types = require(script.Types)
 
 -- < Types > --
@@ -18,6 +19,8 @@ type GeometryContainer = GeometryContainer.GeometryContainer
 export type Renderer = Types.Renderer
 type RenderState = Types.RenderState
 type Collider = Types.TerrainCollider
+type VoxelProcessor = Types.VoxelProcessor
+type VoxelRenderer = Types.VoxelRenderer
 
 -- < Variables > --
 local PLANET_RADIUS: number = 20000
@@ -287,6 +290,9 @@ function Renderer.new(voxelSize: number, highestLOD: number, TerrainCFrame: CFra
         voxelsToRender[x] = {}
     end
 
+    local processor: VoxelProcessor = VoxelProcessor.new(TerrainCFrame, voxelSize, highestLOD)
+    local renderer: VoxelRenderer = VoxelRenderer.new(TerrainCFrame, voxelSize, highestLOD, processor.GeoContainer)
+
     local renderStep: RBXScriptConnection = nil
     local self: Renderer = setmetatable({
         VoxelSize = voxelSize,
@@ -295,7 +301,8 @@ function Renderer.new(voxelSize: number, highestLOD: number, TerrainCFrame: CFra
         State = "Idle" :: RenderState,
         TargetLod = 0,
         ViewerPosition = vector.zero,
-        Processor = VoxelProcessor.new(TerrainCFrame, voxelSize, highestLOD),
+        Processor = processor,
+        VoxelRenderer = renderer,
         _renderArea = { Min = vector.zero, Max = vector.zero },
         _collisionParts = {},
         _collisionPartsRecycleBin = {},
@@ -318,87 +325,87 @@ function Renderer.new(voxelSize: number, highestLOD: number, TerrainCFrame: CFra
         _processZ = 0,
     }, RendererInstance)
 
-    renderStep = RunService.Heartbeat:Connect(function()
-        local count: number = 0
-        local terrainPos: vector = vector.create(self.TerrainCFrame.X, self.TerrainCFrame.Y, self.TerrainCFrame.Z)
+    -- renderStep = RunService.Heartbeat:Connect(function()
+    --     local count: number = 0
+    --     local terrainPos: vector = vector.create(self.TerrainCFrame.X, self.TerrainCFrame.Y, self.TerrainCFrame.Z)
 
-        -- Render new voxels
-        if self.State == "Rendering" then
-            debug.profilebegin("Voxel Rendering")
-            local lod: number = self._renderListLod
-            local lodIsEmpty: boolean = true
-            count = 0
+    --     -- Render new voxels
+    --     if self.State == "Rendering" then
+    --         debug.profilebegin("Voxel Rendering")
+    --         local lod: number = self._renderListLod
+    --         local lodIsEmpty: boolean = true
+    --         count = 0
 
-            local voxelList: { vector } = self.Processor._renderList[math.min(lod, 10)]
-            for i: number = #voxelList, 1, -1 do
-                lodIsEmpty = false
-                local voxel: vector = voxelList[i]
+    --         local voxelList: { vector } = self.Processor._renderList[math.min(lod, 10)]
+    --         for i: number = #voxelList, 1, -1 do
+    --             lodIsEmpty = false
+    --             local voxel: vector = voxelList[i]
 
-                self:RenderVoxel(voxel, lod)
-                table.remove(voxelList, i)
-                count += 1
+    --             self:RenderVoxel(voxel, lod)
+    --             table.remove(voxelList, i)
+    --             count += 1
 
-                if count >= VOXELS_RENDER_PER_FRAME then break end
-            end
+    --             if count >= VOXELS_RENDER_PER_FRAME then break end
+    --         end
 
-            local finishedRendering: boolean = lodIsEmpty and lod > 11
-            if lodIsEmpty then
-                self.State = "Recycling"
-                self._renderListLod += 1
-            end
+    --         local finishedRendering: boolean = lodIsEmpty and lod > 11
+    --         if lodIsEmpty then
+    --             self.State = "Recycling"
+    --             self._renderListLod += 1
+    --         end
 
-            if finishedRendering then
-                self.State = "Idle"
-                self._mesh:RemoveUnused()
-                table.clear(self._recycleVertices)
+    --         if finishedRendering then
+    --             self.State = "Idle"
+    --             self._mesh:RemoveUnused()
+    --             table.clear(self._recycleVertices)
 
-                if not self._meshPart and self.Processor.GeoContainer.FaceCount > 0 then
-                    task.defer(function()
-                        local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self._mesh))
-                        part.Material = Enum.Material.Grass
-                        part.BrickColor = BrickColor.new("Parsley green")
-                        part.Anchored = true
-                        part.CanCollide = false
-                        part.Parent = workspace
-                        self._meshPart = part
-                        print("Created mesh part")
-                    end)
-                end
-            end
-            debug.profileend()
-        end
+    --             if not self._meshPart and self.Processor.GeoContainer.FaceCount > 0 then
+    --                 task.defer(function()
+    --                     local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self._mesh))
+    --                     part.Material = Enum.Material.Grass
+    --                     part.BrickColor = BrickColor.new("Parsley green")
+    --                     part.Anchored = true
+    --                     part.CanCollide = false
+    --                     part.Parent = workspace
+    --                     self._meshPart = part
+    --                     print("Created mesh part")
+    --                 end)
+    --             end
+    --         end
+    --         debug.profileend()
+    --     end
 
-        -- Voxel cleanup
-        if self.State == "Recycling" then
-            debug.profilebegin("Recycling")
-            local isEmpty: boolean = true
-            local lod: number = self._renderListLod - 2
+    --     -- Voxel cleanup
+    --     if self.State == "Recycling" then
+    --         debug.profilebegin("Recycling")
+    --         local isEmpty: boolean = true
+    --         local lod: number = self._renderListLod - 2
 
-            local voxelSize: number = self._voxelSizes[lod]
-            local voxelList: { vector } = self.Processor._cleaningList[lod] or {}
+    --         local voxelSize: number = self._voxelSizes[lod]
+    --         local voxelList: { vector } = self.Processor._cleaningList[lod] or {}
 
-            for i: number = #voxelList, 1, -1 do
-                isEmpty = false
-                local voxel: vector = voxelList[i]
-                cleanupVoxel(voxel, lod, voxelSize, terrainPos, self.Processor.GeoContainer, self._mesh, self._recycleVertices)
-                table.remove(voxelList, i)
-                count += 1
+    --         for i: number = #voxelList, 1, -1 do
+    --             isEmpty = false
+    --             local voxel: vector = voxelList[i]
+    --             cleanupVoxel(voxel, lod, voxelSize, terrainPos, self.Processor.GeoContainer, self._mesh, self._recycleVertices)
+    --             table.remove(voxelList, i)
+    --             count += 1
 
-                if count >= VOXEL_CLEANUP_PER_FRAME then
-                    debug.profileend()
-                    return
-                end
-            end
+    --             if count >= VOXEL_CLEANUP_PER_FRAME then
+    --                 debug.profileend()
+    --                 return
+    --             end
+    --         end
 
-            if count >= VOXEL_CLEANUP_PER_FRAME then
-                debug.profileend()
-                return
-            end
+    --         if count >= VOXEL_CLEANUP_PER_FRAME then
+    --             debug.profileend()
+    --             return
+    --         end
 
-            if isEmpty then self.State = "Rendering" end
-            debug.profileend()
-        end
-    end)
+    --         if isEmpty then self.State = "Rendering" end
+    --         debug.profileend()
+    --     end
+    -- end)
 
     return self
 end
@@ -530,7 +537,7 @@ function RendererInstance:RenderVoxel(voxel: vector, lod: number, collider: Coll
 end
 
 function RendererInstance:RenderAtLocation(position: vector): boolean
-    if self.State ~= "Idle" or self.Processor.IsProcessing then return false end
+    if self.State ~= "Idle" or self.Processor.IsProcessing or self.VoxelRenderer.IsRendering then return false end
 
     local startingLOD: number = 6
     local posOnPlanet: vector = (position / vector.magnitude(position)) * PLANET_RADIUS
@@ -543,9 +550,7 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     self.Processor:ProcessChunk(renderMin, renderMax, startingLOD, posOnPlanet):andThen(function()
         self.ViewerPosition = posOnPlanet
         self.TargetLod = startingLOD
-        self._renderListLod = self.TargetLod
-        self.State = "Rendering"
-        print("Finished processing chunk")
+        self.VoxelRenderer:Render(self.Processor._renderList, self.Processor._cleaningList, startingLOD)
     end, function(msg)
         warn(`Error {msg}`)
     end)

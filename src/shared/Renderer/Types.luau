@@ -3,13 +3,35 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
+type Promise<T...> = Promise.TypedPromise<T...>
 export type GeometryContainer = GeometryContainer.GeometryContainer
 export type CollisionFace = Model & {
     Wedge1: WedgePart,
     Wedge2: WedgePart,
 }
 
-type Promise<T...> = Promise.TypedPromise<T...>
+type VoxelRendererMeta = {
+    __index: VoxelRendererMeta,
+    Render: (self: VoxelRenderer, renderList: { [number]: { vector } }, cleaningList: { [number]: { vector } }, startLOD: number) -> Promise<>,
+    RenderVoxel: (self: VoxelRenderer, voxel: vector, lod: number, collider: TerrainCollider?) -> number,
+    CleanupVoxel: (self: VoxelRenderer, voxel: vector, lod: number) -> (),
+    GetVertexId: (self: VoxelRenderer, voxel: vector, lod: number, vertexPos: vector, vertex: number, cornerBuffer: { number }) -> number,
+}
+
+export type VoxelRenderer = typeof(setmetatable(
+    {} :: {
+        MaxLOD: number,
+        BaseVoxelSize: number,
+        TerrainCFrame: CFrame,
+        TerrainPosition: vector,
+        GeoContainer: GeometryContainer,
+        IsRendering: boolean,
+        _voxelSizes: { number },
+        _vertexRecycleBin: { number },
+    },
+    {} :: VoxelRendererMeta
+))
+
 type VoxelProcessorMeta = {
     __index: VoxelProcessorMeta,
     ProcessChunk: (self: VoxelProcessor, chunkMin: vector, chunkMax: vector, lod: number, viewerPosition: vector) -> Promise<>,
@@ -73,6 +95,7 @@ export type Renderer = typeof(setmetatable(
         TargetLod: number,
         ViewerPosition: vector,
         Processor: VoxelProcessor,
+        VoxelRenderer: VoxelRenderer,
         _renderArea: { Min: vector, Max: vector },
         _processFrontIndex: number,
         _processBackIndex: number,

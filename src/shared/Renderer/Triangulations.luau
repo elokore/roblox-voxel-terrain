@@ -30,7 +30,7 @@
 -- reproduced without permission.
 --
 --
--- Converted to Luau format by Elocore 8/4/2022
+-- Converted to Luau by Elocore 8/4/2022
 --================================================================================
 --stylua: ignore start
 export type CellData = {
