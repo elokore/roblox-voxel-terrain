@@ -12,7 +12,13 @@ export type CollisionFace = Model & {
 
 type VoxelRendererMeta = {
     __index: VoxelRendererMeta,
-    Render: (self: VoxelRenderer, renderList: { [number]: { vector } }, cleaningList: { [number]: { vector } }, startLOD: number) -> Promise<>,
+    Render: (
+        self: VoxelRenderer,
+        renderList: { [number]: { vector } },
+        cleaningList: { [number]: { vector } },
+        renderFirstList: { [number]: { vector } },
+        startLOD: number
+    ) -> Promise<>,
     RenderVoxel: (self: VoxelRenderer, voxel: vector, lod: number, collider: TerrainCollider?) -> number,
     CleanupVoxel: (self: VoxelRenderer, voxel: vector, lod: number) -> (),
     GetVertexId: (self: VoxelRenderer, voxel: vector, lod: number, vertexPos: vector, vertex: number, cornerBuffer: { number }) -> number,
@@ -49,6 +55,7 @@ export type VoxelProcessor = typeof(setmetatable(
         GeoContainer: GeometryContainer,
         _voxelSizes: { number },
         _renderList: { [number]: { vector } },
+        _renderFirstList: { [number]: { vector } },
         _cleaningList: { [number]: { vector } },
     },
     {} :: VoxelProcessorMeta

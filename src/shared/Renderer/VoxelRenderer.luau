@@ -234,7 +234,12 @@ function VoxelRenderer:CleanupVoxel(voxel: vector, lod: number)
     container:RemoveFaces(voxel, lod)
 end
 
-function VoxelRenderer:Render(renderList: { [number]: { vector } }, cleaningList: { [number]: { vector } }, startLOD: number): Promise<>
+function VoxelRenderer:Render(
+    renderList: { [number]: { vector } },
+    cleaningList: { [number]: { vector } },
+    renderFirst: { [number]: { vector } },
+    startLOD: number
+): Promise<>
     if self.IsRendering then return Promise.reject("Render is already in progress") end
     self.IsRendering = true
 
@@ -242,12 +247,35 @@ function VoxelRenderer:Render(renderList: { [number]: { vector } }, cleaningList
         local step: RBXScriptConnection
         local currentRenderLOD: number = startLOD
         local currentCleanupLOD: number = startLOD
-        local mode: "Render" | "Cleanup" = "Cleanup"
+        local currentFirstRenderLOD: number = startLOD
+        local mode: "RenderFirst" | "Render" | "Cleanup" = "RenderFirst"
         local isRenderListEmpty: boolean = false
         local isCleaningListEmpty: boolean = false
 
+        local renderFirstSize: number = 0
+
         step = RunService.Heartbeat:Connect(function()
             local processCount: number = 0
+
+            if mode == "RenderFirst" then
+                for lod: number = currentFirstRenderLOD, self.MaxLOD do
+                    currentFirstRenderLOD = lod
+
+                    for i: number = #renderFirst[lod], 1, -1 do
+                        renderFirstSize += 1
+                        local voxel: vector = renderFirst[lod][i]
+                        self:RenderVoxel(voxel, lod, nil)
+
+                        table.remove(renderFirst[lod], i)
+                        processCount += 1
+
+                        if processCount >= VOXELS_RENDER_PER_FRAME then return end
+                    end
+                end
+
+                print("There were", renderFirstSize, "voxels in render first")
+                mode = "Cleanup"
+            end
 
             if mode == "Cleanup" then
                 for lod: number = currentCleanupLOD, self.MaxLOD do
@@ -258,12 +286,7 @@ function VoxelRenderer:Render(renderList: { [number]: { vector } }, cleaningList
                         table.remove(cleaningList[lod], i)
                         processCount += 1
 
-                        if processCount >= VOXEL_CLEANUP_PER_FRAME then
-                            if i == 1 then
-                                currentCleanupLOD += 1
-                            end
-                            return
-                        end
+                        if processCount >= VOXEL_CLEANUP_PER_FRAME then return end
                     end
                 end
 
@@ -281,12 +304,7 @@ function VoxelRenderer:Render(renderList: { [number]: { vector } }, cleaningList
                         table.remove(renderList[lod], i)
                         processCount += 1
 
-                        if processCount >= VOXELS_RENDER_PER_FRAME then
-                            if i == 1 then
-                                currentRenderLOD += 1
-                            end
-                            return
-                        end
+                        if processCount >= VOXELS_RENDER_PER_FRAME then return end
                     end
                 end
 

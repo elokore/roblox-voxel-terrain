@@ -550,7 +550,7 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     self.Processor:ProcessChunk(renderMin, renderMax, startingLOD, posOnPlanet):andThen(function()
         self.ViewerPosition = posOnPlanet
         self.TargetLod = startingLOD
-        self.VoxelRenderer:Render(self.Processor._renderList, self.Processor._cleaningList, startingLOD)
+        self.VoxelRenderer:Render(self.Processor._renderList, self.Processor._cleaningList, self.Processor._renderFirstList, startingLOD)
     end, function(msg)
         warn(`Error {msg}`)
     end)
