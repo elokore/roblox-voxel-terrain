@@ -322,73 +322,6 @@ function Renderer.new(voxelSize: number, highestLOD: number, TerrainCFrame: CFra
         local count: number = 0
         local terrainPos: vector = vector.create(self.TerrainCFrame.X, self.TerrainCFrame.Y, self.TerrainCFrame.Z)
 
-        -- if self.State == "Processing" then
-        --     debug.profilebegin("Processing")
-        --     local processCount: number = 0
-        --     local progress: number = self._processX
-
-        --     local areaSize: vector = self._renderArea.Max - self._renderArea.Min + vector.one
-        --     local totalVoxels: number = areaSize.x * areaSize.y * areaSize.z
-
-        --     for i = progress, totalVoxels do
-        --         self._processX = i
-
-        --         local v: vector = vector.create(
-        --             self._renderArea.Min.x + (i % areaSize.x),
-        --             self._renderArea.Min.y + math.floor(i / (areaSize.x * areaSize.z)),
-        --             self._renderArea.Max.z - (math.floor(i / areaSize.x) % areaSize.z)
-        --         )
-
-        --         if self._processFrontIndex == 0 and self._processBackIndex == 0 then
-        --             table.insert(self._voxelsToProcess, getVoxelID(v, self.TargetLod))
-        --             self._processFrontIndex = 1
-        --             self._processBackIndex = 1
-        --         end
-
-        --         local maxIterations: number = VOXELS_PROCESS_PER_FRAME - processCount
-        --         for _ = 1, maxIterations do
-        --             local voxelID: number = self._voxelsToProcess[self._processFrontIndex]
-        --             local voxel: vector, lod: number = getVoxelFromID(voxelID)
-        --             local thisVoxelSize: number = self._voxelSizes[lod]
-        --             local voxelWorldPos: vector = getVoxelWorldPosition(voxel, thisVoxelSize, terrainPos)
-        --             local dist: number = vector.magnitude(voxelWorldPos - self.ViewerPosition)
-        --             local canDivide: boolean, canDivideAndRender: boolean =
-        --                 canSubdivide(voxel, thisVoxelSize, terrainPos, lod, 10, self.ViewerPosition)
-
-        --             if canDivide or canDivideAndRender then subdivideAndAddToProcessQueue(self, voxel, lod) end
-
-        --             if (not canDivide or canDivideAndRender) and not self.Processor.GeoContainer._faceStorage[lod][voxel] then
-        --                 local caseCode: number = sampleCaseCode(voxel, thisVoxelSize, terrainPos)
-        --                 if dist <= RENDER_RADIUS and caseCode ~= 0 and caseCode ~= 255 then table.insert(self._voxelsToRender[lod], voxel) end
-        --             end
-
-        --             self._voxelsToProcess[self._processFrontIndex] = nil
-        --             self._processFrontIndex += 1
-        --             processCount += 1
-
-        --             local isFinishedSubdividing: boolean = self._processFrontIndex > self._processBackIndex
-        --             if isFinishedSubdividing then
-        --                 self._processFrontIndex = 0
-        --                 self._processBackIndex = 0
-        --                 self._processX += 1 --Ensure we dont reprocess this voxel
-        --             end
-
-        --             if processCount >= VOXELS_PROCESS_PER_FRAME then
-        --                 debug.profileend()
-        --                 return
-        --             elseif isFinishedSubdividing then
-        --                 break
-        --             end
-        --         end
-        --     end
-
-        --     debug.profileend()
-
-        --     self.State = "Rendering"
-        --     self._renderListLod = self.TargetLod
-        --     return
-        -- end
-
         -- Render new voxels
         if self.State == "Rendering" then
             debug.profilebegin("Voxel Rendering")
@@ -604,34 +537,8 @@ function RendererInstance:RenderAtLocation(position: vector): boolean
     local renderMin: vector, renderMax: vector = self:GetRenderAreaBoundingBox(posOnPlanet, startingLOD)
     self._renderArea.Min = renderMin
     self._renderArea.Max = renderMax
-    local terrainPos: vector = vector.create(self.TerrainCFrame.X, self.TerrainCFrame.Y, self.TerrainCFrame.Z)
 
     print("RenderAreaSize:", renderMax - renderMin)
-    local cleanCount: number = 0
-
-    --Find voxels we can cleanup for all relevant LODs
-    -- for lod: number = startingLOD, 10 do
-    --     local voxelSize: number = self._voxelSizes[lod]
-
-    --     for voxel: vector, faces: { number } in self.Processor.GeoContainer._faceStorage[lod] do
-    --         local voxelWorldPos: vector = getVoxelWorldPosition(voxel, voxelSize, terrainPos)
-    --         local dist: number = vector.magnitude(voxelWorldPos - posOnPlanet)
-    --         local inBounds: boolean = dist <= RENDER_RADIUS
-
-    --         local parentVoxel: vector = self.Processor.GeoContainer:GetAncestorVoxel(voxel, 1)
-    --         local parentVoxelSize: number = self._voxelSizes[lod - 1]
-    --         local canParentSubdivide: boolean, canParentBorderDivide: boolean =
-    --             canSubdivide(parentVoxel, parentVoxelSize, terrainPos, lod - 1, 10, posOnPlanet)
-    --         local canBeSubdivided: boolean = canSubdivide(voxel, voxelSize, terrainPos, lod, 10, posOnPlanet)
-    --         local shouldCleanup: boolean = not inBounds or canBeSubdivided or (not canParentSubdivide and not canParentBorderDivide)
-
-    --         if shouldCleanup then
-    --             --BinaryArray.BinaryInsert(self._voxelsToCleanup[lod], voxel, voxelEval)
-    --             cleanCount += 1
-    --             table.insert(self._voxelsToCleanup[lod], voxel)
-    --         end
-    --     end
-    -- end
 
     self.Processor:ProcessChunk(renderMin, renderMax, startingLOD, posOnPlanet):andThen(function()
         self.ViewerPosition = posOnPlanet
