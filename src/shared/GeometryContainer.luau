@@ -1,4 +1,6 @@
 --!strict
+local AssetService = game:GetService("AssetService")
+
 -- < Types > --
 type GeometryContainerMeta = {
     __index: GeometryContainerMeta,
@@ -10,6 +12,7 @@ type GeometryContainerMeta = {
     StoreFaceId: (self: GeometryContainer, faceId: number, voxel: vector, lod: number) -> (),
     RemoveFaces: (self: GeometryContainer, voxel: vector, lod: number) -> (),
     StoreCaseCode: (self: GeometryContainer, caseCode: number, voxel: vector, lod: number) -> (),
+    CreateMeshPart: (self: GeometryContainer) -> MeshPart,
 }
 
 export type GeometryContainer = typeof(setmetatable(
@@ -17,6 +20,8 @@ export type GeometryContainer = typeof(setmetatable(
         LevelsOfDetail: number,
         VertexCount: number,
         FaceCount: number,
+        Mesh: EditableMesh,
+        MeshPart: MeshPart?,
         _vertexStorage: { [number]: { [vector]: { number } } },
         _faceStorage: { [number]: { [vector]: { number } } },
         _codeStorage: { [number]: { [vector]: number } },
@@ -28,8 +33,7 @@ export type GeometryContainer = typeof(setmetatable(
 local Z_CORRECTION: vector = vector.create(0, 0, 1)
 
 local GeometryContainer = {}
-local GeometryContainerInstance = {}
-GeometryContainerInstance.__index = GeometryContainerInstance
+GeometryContainer.__index = GeometryContainer
 
 --[=[
     Contains the voxels at all Levels of detail and helper functions for finding voxel positions
@@ -41,10 +45,12 @@ function GeometryContainer.new(levelsOfDetail: number): GeometryContainer
         LevelsOfDetail = levelsOfDetail,
         VertexCount = 0,
         FaceCount = 0,
+        Mesh = AssetService:CreateEditableMesh(),
+        MeshPart = nil,
         _vertexStorage = {},
         _faceStorage = {},
         _codeStorage = {},
-    }, GeometryContainerInstance)
+    }, GeometryContainer)
 
     for x = 1, levelsOfDetail do
         self._vertexStorage[x] = {}
@@ -55,6 +61,18 @@ function GeometryContainer.new(levelsOfDetail: number): GeometryContainer
     return self
 end
 
+function GeometryContainer:CreateMeshPart(): MeshPart
+    assert(self.VertexCount > 0 and self.FaceCount > 0, "Mesh cannot be empty")
+    local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self.Mesh))
+    part.Material = Enum.Material.Grass
+    part.BrickColor = BrickColor.new("Parsley green")
+    part.Anchored = true
+    part.CanCollide = false
+    part.Parent = workspace
+    self.MeshPart = part
+    return part
+end
+
 --[=[
     Converts the voxel position to the position of the equivalent voxel in a lower level of detail
     @param pos vector -- Voxel position to convert
@@ -62,7 +80,7 @@ end
     @return The position of the voxel in a lower level of detail
     @within GeometryContainer
 ]=]
-function GeometryContainerInstance:GetAncestorVoxel(pos: vector, levelsLower: number?): vector
+function GeometryContainer:GetAncestorVoxel(pos: vector, levelsLower: number?): vector
     return vector.floor(pos / (2 ^ (levelsLower or 1)))
 end
 
@@ -76,7 +94,7 @@ end
     @return The position of the child voxel that fits in corner 0 of the parent
     @within GeometryContainer
 ]=]
-function GeometryContainerInstance:GetDescendantVoxel(pos: vector, levelsHigher: number?): vector
+function GeometryContainer:GetDescendantVoxel(pos: vector, levelsHigher: number?): vector
     return pos * (2 ^ (levelsHigher or 1)) + Z_CORRECTION
 end
 
@@ -90,7 +108,7 @@ end
     @param lod number -- The level of detail of the voxel
     @within GeometryContainer
 ]=]
-function GeometryContainerInstance:StoreVertexId(vertexId: number, vertexLocation: number, voxelPos: vector, lod: number)
+function GeometryContainer:StoreVertexId(vertexId: number, vertexLocation: number, voxelPos: vector, lod: number)
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
     assert(vertexLocation >= 0 and vertexLocation <= 3, "'vertexLocation' must be between 0 and 3")
     if not self._vertexStorage[lod][voxelPos] then self._vertexStorage[lod][voxelPos] = {} end
@@ -99,7 +117,7 @@ function GeometryContainerInstance:StoreVertexId(vertexId: number, vertexLocatio
     self._vertexStorage[lod][voxelPos][vertexLocation] = vertexId
 end
 
-function GeometryContainerInstance:GetVertexId(vertexLocation: number, voxelPos: vector, lod: number): number?
+function GeometryContainer:GetVertexId(vertexLocation: number, voxelPos: vector, lod: number): number?
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
     assert(vertexLocation >= 0 and vertexLocation <= 3, "'vertexLocation' must be between 0 and 3")
     if not self._vertexStorage[lod][voxelPos] then return end
@@ -115,7 +133,7 @@ end
     @param lod number -- The level of detail of the voxel
     @within GeometryContainer
 ]=]
-function GeometryContainerInstance:RemoveVertexId(vertexLocation: number, voxelPos: vector, lod: number)
+function GeometryContainer:RemoveVertexId(vertexLocation: number, voxelPos: vector, lod: number)
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
     assert(vertexLocation >= -1 and vertexLocation <= 3, "'vertexLocation' must be between -1 and 3")
 
@@ -133,21 +151,21 @@ function GeometryContainerInstance:RemoveVertexId(vertexLocation: number, voxelP
     self.VertexCount -= 1
 end
 
-function GeometryContainerInstance:StoreFaceId(faceId: number, voxelPos: vector, lod: number)
+function GeometryContainer:StoreFaceId(faceId: number, voxelPos: vector, lod: number)
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
     if not self._faceStorage[lod][voxelPos] then self._faceStorage[lod][voxelPos] = {} end
     table.insert(self._faceStorage[lod][voxelPos], faceId)
     self.FaceCount += 1
 end
 
-function GeometryContainerInstance:RemoveFaces(voxelPos: vector, lod: number)
+function GeometryContainer:RemoveFaces(voxelPos: vector, lod: number)
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
     local faceCountInVoxel: number = #self._faceStorage[lod][voxelPos]
     self.FaceCount -= faceCountInVoxel
     self._faceStorage[lod][voxelPos] = nil
 end
 
-function GeometryContainerInstance:StoreCaseCode(caseCode: number, voxel: vector, lod: number)
+function GeometryContainer:StoreCaseCode(caseCode: number, voxel: vector, lod: number)
     assert(lod >= 1 and lod <= self.LevelsOfDetail, `'lod' must be between 1 and {self.LevelsOfDetail}`)
     self._codeStorage[lod][voxel] = caseCode
 end
