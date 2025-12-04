@@ -32,6 +32,7 @@ export type VoxelRenderer = typeof(setmetatable(
         TerrainPosition: vector,
         GeoContainer: GeometryContainer,
         IsRendering: boolean,
+        MeshContainer: Folder,
         _voxelSizes: { number },
         _vertexRecycleBin: { number },
     },
@@ -63,7 +64,7 @@ export type VoxelProcessor = typeof(setmetatable(
 
 type ColliderMeta = {
     __index: ColliderMeta,
-    SetColliderSize: (self: TerrainCollider, sizeInVoxels: number, lod: number) -> (),
+    SetColliderSize: (self: TerrainCollider, sizeInVoxels: number, lod: number, voxelSize: number) -> (),
     GetCollisionFaceId: (self: TerrainCollider, voxel: vector, triangleNumber: number) -> number,
     GetCollisionFaceFromID: (self: TerrainCollider, id: number) -> (vector, number),
     UpdateCollider: (self: TerrainCollider, at: vector) -> (),
@@ -73,7 +74,8 @@ type ColliderMeta = {
 export type TerrainCollider = typeof(setmetatable(
     {} :: {
         Container: Folder,
-        Renderer: Renderer,
+        Renderer: VoxelRenderer,
+        VoxelSize: number,
         Size: number,
         LOD: number,
         RecycleBin: { CollisionFace },
@@ -84,42 +86,26 @@ export type TerrainCollider = typeof(setmetatable(
     {} :: ColliderMeta
 ))
 
-type RendererMeta = {
-    __index: RendererMeta,
-    RenderVoxel: (self: Renderer, voxel: vector, lod: number, collider: TerrainCollider?) -> number,
-    GetVertexId: (self: Renderer, voxel: vector, lod: number, vertexPos: vector, vertex: number, cornerBuffer: { number }) -> number,
-    GetNearestVoxel: (self: Renderer, globalPosition: vector, lod: number) -> vector,
-    GetRenderAreaBoundingBox: (self: Renderer, areaCenter: vector, lod: number) -> (vector, vector),
-    RenderAtLocation: (self: Renderer, position: vector) -> boolean,
+type VoxelTerrainMeta = {
+    __index: VoxelTerrainMeta,
+    GetRenderAreaBoundingBox: (self: VoxelTerrain, areaCenter: vector, lod: number) -> (vector, vector),
+    RenderAtLocation: (self: VoxelTerrain, position: vector) -> boolean,
 }
 
-export type RenderState = "Idle" | "Recycling" | "Rendering" | "Processing"
-export type Renderer = typeof(setmetatable(
+export type VoxelTerrain = typeof(setmetatable(
     {} :: {
         VoxelSize: number,
         TerrainCFrame: CFrame,
-        State: RenderState,
-        TargetLod: number,
-        ViewerPosition: vector,
-        Processor: VoxelProcessor,
-        VoxelRenderer: VoxelRenderer,
-        _renderArea: { Min: vector, Max: vector },
-        _processFrontIndex: number,
-        _processBackIndex: number,
-        _voxelsToProcess: { number },
-        _voxelsToCleanup: { [number]: { vector } },
-        _renderListLod: number,
-        _voxelsToRender: { [number]: { vector } },
-        _recycleVertices: { number },
-        _mesh: EditableMesh,
-        _meshPart: MeshPart?,
+        TerrainPosition: vector,
+        IsBusy: boolean,
+        MaxLOD: number,
+        WorkerCount: number,
+        Workers: { Actor },
+        MeshContainer: Folder,
+        _workerStates: { boolean },
         _voxelSizes: { number },
-        _renderStep: RBXScriptConnection,
-        _processX: number,
-        _processY: number,
-        _processZ: number,
     },
-    {} :: RendererMeta
+    {} :: VoxelTerrainMeta
 ))
 
 local module = {}

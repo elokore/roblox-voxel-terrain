@@ -12,7 +12,7 @@ type GeometryContainerMeta = {
     StoreFaceId: (self: GeometryContainer, faceId: number, voxel: vector, lod: number) -> (),
     RemoveFaces: (self: GeometryContainer, voxel: vector, lod: number) -> (),
     StoreCaseCode: (self: GeometryContainer, caseCode: number, voxel: vector, lod: number) -> (),
-    CreateMeshPart: (self: GeometryContainer) -> MeshPart,
+    CreateMeshPart: (self: GeometryContainer, parent: Instance?) -> MeshPart,
 }
 
 export type GeometryContainer = typeof(setmetatable(
@@ -61,14 +61,14 @@ function GeometryContainer.new(levelsOfDetail: number): GeometryContainer
     return self
 end
 
-function GeometryContainer:CreateMeshPart(): MeshPart
+function GeometryContainer:CreateMeshPart(parent: Instance?): MeshPart
     assert(self.VertexCount > 0 and self.FaceCount > 0, "Mesh cannot be empty")
     local part: MeshPart = AssetService:CreateMeshPartAsync(Content.fromObject(self.Mesh))
     part.Material = Enum.Material.Grass
     part.BrickColor = BrickColor.new("Parsley green")
     part.Anchored = true
     part.CanCollide = false
-    part.Parent = workspace
+    part.Parent = parent or workspace
     self.MeshPart = part
     return part
 end

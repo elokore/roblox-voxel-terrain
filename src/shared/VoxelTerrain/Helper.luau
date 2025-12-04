@@ -66,10 +66,19 @@ function module.SampleVoxelCorners(voxel: vector, voxelSize: number, terrainPos:
         local cornerPos: vector = voxelPos + mask * halfSize
         local scaledPos: vector = cornerPos * 1 / 200
 
-        sampleCornerBuffer[i] = planetRadius - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 100
+        sampleCornerBuffer[i] = planetRadius - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 500
     end
 
     return sampleCornerBuffer
+end
+
+function module.GetNearestVoxel(terrainCF: CFrame, worldPos: vector, voxelSize: number): vector
+    local halfSize: number = voxelSize / 2
+    terrainCF *= CFrame.new(halfSize, halfSize, halfSize)
+    local rp: Vector3 = terrainCF:PointToObjectSpace(Vector3.new(worldPos.x, worldPos.y, worldPos.z))
+    local relativePos: vector = vector.create(rp.X, rp.Y, rp.Z)
+    local voxel: vector = vector.floor((relativePos / voxelSize) + vector.create(0.5, 0.5, 0.5))
+    return voxel
 end
 
 return module

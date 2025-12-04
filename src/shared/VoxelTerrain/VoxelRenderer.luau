@@ -80,7 +80,13 @@ local function getDirectionForVertexOwner(vertex: number, cornerBuffer: { number
     return direction, reuseIndex
 end
 
-function VoxelRenderer.new(terrainCFrame: CFrame, baseVoxelSize: number, maxLOD: number, container: GeometryContainer): VoxelRenderer
+function VoxelRenderer.new(
+    terrainCFrame: CFrame,
+    baseVoxelSize: number,
+    maxLOD: number,
+    container: GeometryContainer,
+    meshContainer: Folder
+): VoxelRenderer
     local voxelSizes: { number } = {}
     for x: number = 1, maxLOD do
         voxelSizes[x] = baseVoxelSize * (2 ^ (maxLOD - x))
@@ -93,6 +99,7 @@ function VoxelRenderer.new(terrainCFrame: CFrame, baseVoxelSize: number, maxLOD:
         TerrainPosition = vector.create(terrainCFrame.X, terrainCFrame.Y, terrainCFrame.Z),
         GeoContainer = container,
         IsRendering = false,
+        MeshContainer = meshContainer,
         _vertexRecycleBin = {},
         _voxelSizes = voxelSizes,
     }, VoxelRenderer)
@@ -252,32 +259,35 @@ function VoxelRenderer:Render(
         local isRenderListEmpty: boolean = false
         local isCleaningListEmpty: boolean = false
 
-        local renderFirstSize: number = 0
-
         step = RunService.Heartbeat:Connect(function()
             local processCount: number = 0
 
             -- Render these voxels first to cover any holes that cleaning old voxels may create
             if mode == "RenderFirst" then
+                debug.profilebegin("RenderFirst")
                 for lod: number = currentFirstRenderLOD, self.MaxLOD do
                     currentFirstRenderLOD = lod
 
                     for i: number = #renderFirst[lod], 1, -1 do
-                        renderFirstSize += 1
                         local voxel: vector = renderFirst[lod][i]
                         self:RenderVoxel(voxel, lod, nil)
 
                         table.remove(renderFirst[lod], i)
                         processCount += 1
 
-                        if processCount >= VOXELS_RENDER_PER_FRAME then return end
+                        if processCount >= VOXELS_RENDER_PER_FRAME then
+                            debug.profileend()
+                            return
+                        end
                     end
                 end
 
+                debug.profileend()
                 mode = "Cleanup"
             end
 
             if mode == "Cleanup" then
+                debug.profilebegin("CleanupVoxels")
                 for lod: number = currentCleanupLOD, self.MaxLOD do
                     currentCleanupLOD = lod
 
@@ -287,14 +297,19 @@ function VoxelRenderer:Render(
                         table.remove(cleaningList[lod], i)
                         processCount += 1
 
-                        if processCount >= VOXEL_CLEANUP_PER_FRAME then return end
+                        if processCount >= VOXEL_CLEANUP_PER_FRAME then
+                            debug.profileend()
+                            return
+                        end
                     end
                 end
 
+                debug.profileend()
                 isCleaningListEmpty = true
                 mode = "Render"
                 return
             elseif mode == "Render" then
+                debug.profilebegin("RenderMain")
                 for lod: number = currentRenderLOD, self.MaxLOD do
                     currentRenderLOD = lod
 
@@ -305,17 +320,23 @@ function VoxelRenderer:Render(
                         table.remove(renderList[lod], i)
                         processCount += 1
 
-                        if processCount >= VOXELS_RENDER_PER_FRAME then return end
+                        if processCount >= VOXELS_RENDER_PER_FRAME then
+                            debug.profileend()
+                            return
+                        end
                     end
                 end
 
+                debug.profileend()
                 isRenderListEmpty = true
             end
 
             if isRenderListEmpty and isCleaningListEmpty then
                 step:Disconnect()
                 self.IsRendering = false
-                if not self.GeoContainer.MeshPart and self.GeoContainer.FaceCount > 0 then self.GeoContainer:CreateMeshPart() end
+                if not self.GeoContainer.MeshPart and self.GeoContainer.FaceCount > 0 then
+                    self.GeoContainer:CreateMeshPart(self.MeshContainer)
+                end
 
                 resolve()
             end

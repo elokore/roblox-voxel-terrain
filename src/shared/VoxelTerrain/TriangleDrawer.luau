@@ -59,18 +59,16 @@ function module.DrawTriangle(a: vector, b: vector, c: vector, material: Enum.Mat
     w1.Material = material
     w2.Material = material
 
-    if not reuse then
-        w1.Color = Color3.new()
-        w2.Color = Color3.new()
+    w1.Color = Color3.new()
+    w2.Color = Color3.new()
 
-        w1.Name = "Wedge1"
-        w2.Name = "Wedge2"
+    w1.Name = "Wedge1"
+    w2.Name = "Wedge2"
 
-        model.Name = "Triangle"
+    model.Name = "Triangle"
 
-        w1.Parent = model
-        w2.Parent = model
-    end
+    w1.Parent = model
+    w2.Parent = model
 
     return model
 end

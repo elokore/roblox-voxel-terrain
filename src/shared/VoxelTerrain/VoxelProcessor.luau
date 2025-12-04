@@ -5,16 +5,16 @@ local RunService = game:GetService("RunService")
 local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
 local Helper = require(script.Parent.Helper)
 local Promise = require(ReplicatedStorage.Packages.Promise)
-local Types = require(ReplicatedStorage.Shared.Renderer.Types)
+local Types = require(ReplicatedStorage.Shared.VoxelTerrain.Types)
 
 -- < Types > --
 type Promise<T...> = Promise.TypedPromise<T...>
 type VoxelProcessor = Types.VoxelProcessor
 
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 700
+local RENDER_RADIUS: number = 600
 local SUBDIVIDE_VOXEL_DIST: number = 8
-local VOXELS_PROCESS_PER_FRAME: number = 5000
+local VOXELS_PROCESS_PER_FRAME: number = 1250
 local VoxelProcessor = {}
 VoxelProcessor.__index = VoxelProcessor
 
@@ -192,11 +192,13 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
 
     return Promise.new(function(resolve)
         -- Check for voxels to clean
+        debug.profilebegin("CleanupIndex")
         for lod: number = startLOD, self.MaxLOD do
             for voxel: vector, faces: { number } in self.GeoContainer._faceStorage[lod] do
                 if self:ShouldCleanupVoxel(voxel, lod, viewerPosition) then table.insert(self._cleaningList[lod], voxel) end
             end
         end
+        debug.profileend()
 
         local step: RBXScriptConnection
         local chunkSize: vector = chunkMax - chunkMin + vector.one
@@ -207,7 +209,8 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
         local frontIndex: number = 0
         local backIndex: number = 0
 
-        step = RunService.Heartbeat:Connect(function()
+        step = RunService.Heartbeat:ConnectParallel(function()
+            debug.profilebegin("VoxelProcessing")
             local processCount: number = 0
 
             -- Iterate over the render area.
@@ -243,6 +246,7 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
                     end
 
                     if processCount >= VOXELS_PROCESS_PER_FRAME then
+                        debug.profileend()
                         return
                     elseif allChildrenProcessed then
                         break
@@ -250,6 +254,9 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
                 end
             end
 
+            debug.profileend()
+
+            task.synchronize()
             step:Disconnect()
             self.IsProcessing = false
             resolve()

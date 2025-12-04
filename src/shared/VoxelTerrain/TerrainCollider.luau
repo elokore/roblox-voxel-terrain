@@ -2,11 +2,12 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local Helper = require(script.Parent.Helper)
 local TriangleDrawer = require(script.Parent.TriangleDrawer)
 local Types = require(script.Parent.Types)
 
 type CollisionFace = Types.CollisionFace
-type Renderer = Types.Renderer
+type VoxelRenderer = Types.VoxelRenderer
 export type TerrainCollider = Types.TerrainCollider
 type TriangleModel = TriangleDrawer.TriangleModel
 
@@ -16,7 +17,7 @@ local TerrainCollider = {}
 TerrainCollider.__index = TerrainCollider
 local colliderID: number = 0
 
-function TerrainCollider.new(renderer: Renderer): TerrainCollider
+function TerrainCollider.new(renderer: VoxelRenderer): TerrainCollider
     local folder: Folder = Instance.new("Folder")
     folder.Name = `Collider{colliderID}`
     folder.Parent = workspace
@@ -30,6 +31,7 @@ function TerrainCollider.new(renderer: Renderer): TerrainCollider
     local self: TerrainCollider = setmetatable({
         Renderer = renderer,
         Container = folder,
+        VoxelSize = 0,
         Size = 0,
         LOD = 0,
         RecycleBin = {},
@@ -41,9 +43,10 @@ function TerrainCollider.new(renderer: Renderer): TerrainCollider
     return self
 end
 
-function TerrainCollider:SetColliderSize(sizeInVoxels: number, lod: number)
+function TerrainCollider:SetColliderSize(sizeInVoxels: number, lod: number, voxelSize: number)
     assert(sizeInVoxels % 2 == 0, "Collider size must be an EVEN number")
     self.Size = sizeInVoxels
+    self.VoxelSize = voxelSize
     self.LOD = lod
 end
 
@@ -97,7 +100,7 @@ function TerrainCollider:UpdateCollider(at: vector)
     debug.profilebegin("InitColliderUpdate")
     self.IsUpdating = true
     local lod: number = self.LOD
-    local atVoxel: vector = self.Renderer:GetNearestVoxel(at, lod)
+    local atVoxel: vector = Helper.GetNearestVoxel(self.Renderer.TerrainCFrame, at, self.VoxelSize)
     local range: number = self.Size / 2
 
     local areaMin: vector = atVoxel - vector.create(range, range, range)
