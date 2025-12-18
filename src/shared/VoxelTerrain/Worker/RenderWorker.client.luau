@@ -25,18 +25,22 @@ local processor: VoxelProcessor = VoxelProcessor.new(TerrainCFrame, VoxelBaseSiz
 local renderer: VoxelRenderer = VoxelRenderer.new(TerrainCFrame, VoxelBaseSize, MaxLOD, processor.GeoContainer, MeshContainer)
 
 local isBusy: boolean = false
+local lod: number = 0
 
-actor:BindToMessage("RenderChunk", function(viewerPosition: vector, startLOD: number, chunkMin: vector, chunkMax: vector)
+actor:BindToMessage("ProcessChunk", function(viewerPosition: vector, startLOD: number, chunkMin: vector, chunkMax: vector)
     if isBusy then return end
     isBusy = true
+    lod = startLOD
     actor:SetAttribute("IsBusy", true)
 
     processor:ProcessChunk(chunkMin, chunkMax, startLOD, viewerPosition):await()
-    renderer:Render(processor._renderList, processor._cleaningList, processor._renderFirstList, startLOD):await()
-    print(actor.Name, "Triangles:", processor.GeoContainer.FaceCount)
+    actor:SetAttribute("ProcessFinished", true)
+end)
 
-    actor:SetAttribute("IsBusy", false)
+actor:BindToMessage("RenderChunk", function()
+    renderer:Render(processor._renderList, processor._cleaningList, processor._renderFirstList, lod):await()
     isBusy = false
+    actor:SetAttribute("IsBusy", isBusy)
 end)
 
 print("Init", actor.Name)

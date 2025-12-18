@@ -12,9 +12,9 @@ type VoxelRenderer = Types.VoxelRenderer
 type ChunkBounds = { Min: vector, Max: vector }
 
 -- < Variables > --
-local WORKER_TOPIC: string = "RenderChunk"
+local WORKER_TOPIC: string = "ProcessChunk"
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 600
+local RENDER_RADIUS: number = 1500
 local VoxelTerrain = {}
 VoxelTerrain.__index = VoxelTerrain
 
@@ -205,26 +205,29 @@ function VoxelTerrain:RenderAtLocation(position: vector): boolean
     local posOnPlanet: vector = (position / vector.magnitude(position)) * PLANET_RADIUS
     local renderMin: vector, renderMax: vector = self:GetRenderAreaBoundingBox(posOnPlanet, startingLOD)
     local chunkBoundsList: { ChunkBounds } = getChunkBounds(renderMin, renderMax, 2, 4)
+    local renderQueue: { Actor } = {}
+    local chunksFinished: number = 0
 
     for i: number, bounds: ChunkBounds in chunkBoundsList do
         local worker: Actor = self.Workers[i]
         worker:SendMessage(WORKER_TOPIC, posOnPlanet, startingLOD, bounds.Min, bounds.Max)
 
-        -- local minPos: vector = Helper.GetVoxelWorldPosition(bounds.Min, self._voxelSizes[startingLOD], self.TerrainPosition)
-        -- local maxPos: vector = Helper.GetVoxelWorldPosition(bounds.Max, self._voxelSizes[startingLOD], self.TerrainPosition)
+        worker:GetAttributeChangedSignal("ProcessFinished"):Once(function()
+            worker:SetAttribute("ProcessFinished", false) --Reset
 
-        -- local size: vector = maxPos - minPos
-        -- local pos: vector = (maxPos + minPos) / 2
+            table.insert(renderQueue, worker)
+            if #renderQueue == 1 then worker:SendMessage("RenderChunk") end
 
-        -- local p = Instance.new("Part")
-        -- p.BrickColor = BrickColor.random()
-        -- p.Transparency = 0.5
-        -- p.Anchored = true
-        -- p.CanCollide = false
-        -- p.Size = size
-        -- p.Position = pos
-        -- p.Name = tostring(i)
-        -- p.Parent = workspace
+            worker:GetAttributeChangedSignal("IsBusy"):Once(function()
+                if worker:GetAttribute("IsBusy") then return end
+                table.remove(renderQueue, 1)
+                chunksFinished += 1
+                print("Rendering Chunk", i)
+                if #renderQueue > 0 then renderQueue[1]:SendMessage("RenderChunk") end
+
+                if chunksFinished == #chunkBoundsList then self.IsBusy = false end
+            end)
+        end)
     end
 
     print("Sent messages")

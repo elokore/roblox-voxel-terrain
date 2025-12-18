@@ -64,9 +64,9 @@ function module.SampleVoxelCorners(voxel: vector, voxelSize: number, terrainPos:
     for i: number = 0, 7 do
         local mask: vector = CORNER_MASK[i]
         local cornerPos: vector = voxelPos + mask * halfSize
-        local scaledPos: vector = cornerPos * 1 / 200
+        local scaledPos: vector = cornerPos * 1 / 400
 
-        sampleCornerBuffer[i] = planetRadius - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 500
+        sampleCornerBuffer[i] = planetRadius - vector.magnitude(cornerPos) + math.noise(scaledPos.x, scaledPos.y, scaledPos.z) * 200
     end
 
     return sampleCornerBuffer

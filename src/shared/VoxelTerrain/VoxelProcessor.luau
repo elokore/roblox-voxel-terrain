@@ -12,9 +12,9 @@ type Promise<T...> = Promise.TypedPromise<T...>
 type VoxelProcessor = Types.VoxelProcessor
 
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 600
-local SUBDIVIDE_VOXEL_DIST: number = 8
-local VOXELS_PROCESS_PER_FRAME: number = 1250
+local RENDER_RADIUS: number = 1500
+local SUBDIVIDE_VOXEL_DIST: number = 10
+local VOXELS_PROCESS_PER_FRAME: number = 500
 local VoxelProcessor = {}
 VoxelProcessor.__index = VoxelProcessor
 
