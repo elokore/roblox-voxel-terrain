@@ -13,8 +13,19 @@ type VoxelProcessor = Types.VoxelProcessor
 
 local PLANET_RADIUS: number = 20000
 local RENDER_RADIUS: number = 1500
-local SUBDIVIDE_VOXEL_DIST: number = 10
+local SUBDIVIDE_VOXEL_DIST: number = 8
 local VOXELS_PROCESS_PER_FRAME: number = 500
+local VOXEL_CHILDREN: { vector } = {
+    [0] = vector.zero,
+    [1] = vector.create(1, 0, 0),
+    [2] = vector.create(0, 0, -1),
+    [3] = vector.create(1, 0, -1),
+    [4] = vector.create(0, 1, 0),
+    [5] = vector.create(1, 1, 0),
+    [6] = vector.create(0, 1, -1),
+    [7] = vector.create(1, 1, -1),
+}
+
 local VoxelProcessor = {}
 VoxelProcessor.__index = VoxelProcessor
 
@@ -133,13 +144,13 @@ local function subdivideAndAddToQueue(
     local childLod: number = lod + 1
     local child0: vector = self.GeoContainer:GetDescendantVoxel(voxel)
     local child0ID: number = getVoxelProcessID(child0, childLod, renderFirst)
-    local child1ID: number = getVoxelProcessID(child0 + vector.create(1, 0, 0), childLod, renderFirst)
-    local child2ID: number = getVoxelProcessID(child0 + vector.create(0, 0, -1), childLod, renderFirst)
-    local child3ID: number = getVoxelProcessID(child0 + vector.create(1, 0, -1), childLod, renderFirst)
-    local child4ID: number = getVoxelProcessID(child0 + vector.create(0, 1, 0), childLod, renderFirst)
-    local child5ID: number = getVoxelProcessID(child0 + vector.create(1, 1, 0), childLod, renderFirst)
-    local child6ID: number = getVoxelProcessID(child0 + vector.create(0, 1, -1), childLod, renderFirst)
-    local child7ID: number = getVoxelProcessID(child0 + vector.create(1, 1, -1), childLod, renderFirst)
+    local child1ID: number = getVoxelProcessID(child0 + VOXEL_CHILDREN[1], childLod, renderFirst)
+    local child2ID: number = getVoxelProcessID(child0 + VOXEL_CHILDREN[2], childLod, renderFirst)
+    local child3ID: number = getVoxelProcessID(child0 + VOXEL_CHILDREN[3], childLod, renderFirst)
+    local child4ID: number = getVoxelProcessID(child0 + VOXEL_CHILDREN[4], childLod, renderFirst)
+    local child5ID: number = getVoxelProcessID(child0 + VOXEL_CHILDREN[5], childLod, renderFirst)
+    local child6ID: number = getVoxelProcessID(child0 + VOXEL_CHILDREN[6], childLod, renderFirst)
+    local child7ID: number = getVoxelProcessID(child0 + VOXEL_CHILDREN[7], childLod, renderFirst)
 
     childrenToProcess[backIndex + 1] = child0ID
     childrenToProcess[backIndex + 2] = child1ID
@@ -175,8 +186,7 @@ local function processVoxel(
     end
 
     if canRender and not isAlreadyRendered and dist <= RENDER_RADIUS then
-        local caseCode: number = Helper.GetCaseCode(Helper.SampleVoxelCorners(voxel, voxelSize, self.TerrainPosition, PLANET_RADIUS))
-        local isEmpty: boolean = caseCode == 0 or caseCode == 255
+        local isEmpty: boolean = Helper.IsVoxelEmpty(voxel, voxelSize, self.TerrainPosition, PLANET_RADIUS)
         if not isEmpty then
             local list: { vector } = if renderFirst then self._renderFirstList[lod] else self._renderList[lod]
             table.insert(list, voxel)
@@ -209,7 +219,7 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
         local frontIndex: number = 0
         local backIndex: number = 0
 
-        step = RunService.Heartbeat:ConnectParallel(function()
+        step = RunService.Heartbeat:Connect(function()
             debug.profilebegin("VoxelProcessing")
             local processCount: number = 0
 

@@ -14,7 +14,7 @@ type ChunkBounds = { Min: vector, Max: vector }
 -- < Variables > --
 local WORKER_TOPIC: string = "ProcessChunk"
 local PLANET_RADIUS: number = 20000
-local RENDER_RADIUS: number = 1500
+local RENDER_RADIUS: number = 1800
 local VoxelTerrain = {}
 VoxelTerrain.__index = VoxelTerrain
 
@@ -30,14 +30,14 @@ local function getChunkBasis(min: vector, max: vector): (vector, vector, vector)
     local size: vector = max - min
     local minAxis: number = math.min(size.x, size.y, size.z)
 
-    -- if minAxis == size.y then
-    --     return vector.create(1, 0, 0), vector.create(0, 1, 0), vector.create(0, 0, 1)
-    -- elseif minAxis == size.x then
-    --     return vector.create(0, 0, 1), vector.create(1, 0, 0), vector.create(0, 1, 0)
-    -- else
-    --     return vector.create(1, 0, 0), vector.create(0, 0, 1), vector.create(0, 1, 0)
-    -- end
-    return vector.create(1, 0, 0), vector.create(0, 1, 0), vector.create(0, 0, 1)
+    if minAxis == size.y then
+        return vector.create(1, 0, 0), vector.create(0, 1, 0), vector.create(0, 0, 1)
+    elseif minAxis == size.x then
+        return vector.create(0, 0, 1), vector.create(1, 0, 0), vector.create(0, 1, 0)
+    else
+        return vector.create(1, 0, 0), vector.create(0, 0, 1), vector.create(0, 1, 0)
+    end
+    --return vector.create(1, 0, 0), vector.create(0, 1, 0), vector.create(0, 0, 1)
 end
 
 local function makeDivisible(v: vector, d: number): vector
@@ -202,7 +202,7 @@ function VoxelTerrain:RenderAtLocation(position: vector): boolean
 
     self.IsBusy = true
     local startingLOD: number = 6
-    local posOnPlanet: vector = (position / vector.magnitude(position)) * PLANET_RADIUS
+    local posOnPlanet: vector = position --(position / vector.magnitude(position)) * PLANET_RADIUS
     local renderMin: vector, renderMax: vector = self:GetRenderAreaBoundingBox(posOnPlanet, startingLOD)
     local chunkBoundsList: { ChunkBounds } = getChunkBounds(renderMin, renderMax, 2, 4)
     local renderQueue: { Actor } = {}

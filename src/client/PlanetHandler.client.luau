@@ -14,7 +14,7 @@ type VoxelTerrain = Types.VoxelTerrain
 -- < Variables > --
 local LocalPlayer: Player = Players.LocalPlayer
 local LOD: number = 10
-local terrain: VoxelTerrain = VoxelTerrain.new(16, LOD, CFrame.new())
+local terrain: VoxelTerrain = VoxelTerrain.new(24, LOD, CFrame.new())
 
 local agent: Part = Instance.new("Part")
 agent.Name = "Agent"
@@ -28,6 +28,8 @@ agent.Parent = workspace
 local lastPos: vector = vector.zero
 local colliderLastPos: vector = vector.zero
 local cf = CFrame.lookAlong(Vector3.zero, -Vector3.yAxis)
+
+task.wait(5)
 
 local connection
 local disable: boolean = false

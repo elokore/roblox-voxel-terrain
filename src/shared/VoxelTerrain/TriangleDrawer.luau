@@ -15,8 +15,9 @@ export type TriangleModel = Model & {
 local module = {}
 local wedge: BasePart = Instance.new("WedgePart")
 wedge.CastShadow = false
-wedge.Transparency = 0.5
-wedge.Material = Enum.Material.SmoothPlastic
+wedge.Transparency = 0
+wedge.Color = Color3.fromRGB(32, 131, 23)
+wedge.Material = Enum.Material.Grass
 wedge.Anchored = true
 
 --[[
@@ -59,8 +60,8 @@ function module.DrawTriangle(a: vector, b: vector, c: vector, material: Enum.Mat
     w1.Material = material
     w2.Material = material
 
-    w1.Color = Color3.new()
-    w2.Color = Color3.new()
+    w1.Color = Color3.fromRGB(32, 131, 23)
+    w2.Color = Color3.fromRGB(32, 131, 23)
 
     w1.Name = "Wedge1"
     w2.Name = "Wedge2"
