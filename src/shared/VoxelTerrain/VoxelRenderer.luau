@@ -16,7 +16,7 @@ type TerrainCollider = Types.TerrainCollider
 type VoxelRenderer = Types.VoxelRenderer
 
 local CORNER_MASK: { vector } = TriTables.cornerMask
-local PLANET_RADIUS: number = 20000
+local PLANET_RADIUS: number = 10000
 local VOXEL_CLEANUP_PER_FRAME: number = 500
 local VOXELS_RENDER_PER_FRAME: number = 500
 

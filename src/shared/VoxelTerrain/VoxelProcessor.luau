@@ -11,10 +11,10 @@ local Types = require(ReplicatedStorage.Shared.VoxelTerrain.Types)
 type Promise<T...> = Promise.TypedPromise<T...>
 type VoxelProcessor = Types.VoxelProcessor
 
-local PLANET_RADIUS: number = 20000
+local PLANET_RADIUS: number = 10000
 local RENDER_RADIUS: number = 1500
 local SUBDIVIDE_VOXEL_DIST: number = 8
-local VOXELS_PROCESS_PER_FRAME: number = 500
+local VOXELS_PROCESS_PER_FRAME: number = 1000
 local VOXEL_CHILDREN: { vector } = {
     [0] = vector.zero,
     [1] = vector.create(1, 0, 0),
@@ -219,7 +219,7 @@ function VoxelProcessor:ProcessChunk(chunkMin: vector, chunkMax: vector, startLO
         local frontIndex: number = 0
         local backIndex: number = 0
 
-        step = RunService.Heartbeat:Connect(function()
+        step = RunService.Heartbeat:ConnectParallel(function()
             debug.profilebegin("VoxelProcessing")
             local processCount: number = 0
 

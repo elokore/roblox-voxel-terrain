@@ -13,7 +13,7 @@ type ChunkBounds = { Min: vector, Max: vector }
 
 -- < Variables > --
 local WORKER_TOPIC: string = "ProcessChunk"
-local PLANET_RADIUS: number = 20000
+local PLANET_RADIUS: number = 10000
 local RENDER_RADIUS: number = 1800
 local VoxelTerrain = {}
 VoxelTerrain.__index = VoxelTerrain
@@ -216,7 +216,11 @@ function VoxelTerrain:RenderAtLocation(position: vector): boolean
             worker:SetAttribute("ProcessFinished", false) --Reset
 
             table.insert(renderQueue, worker)
-            if #renderQueue == 1 then worker:SendMessage("RenderChunk") end
+            if #renderQueue == #chunkBoundsList then
+                print("All chunks finished processing")
+                print("Starting render...")
+                renderQueue[1]:SendMessage("RenderChunk")
+            end
 
             worker:GetAttributeChangedSignal("IsBusy"):Once(function()
                 if worker:GetAttribute("IsBusy") then return end

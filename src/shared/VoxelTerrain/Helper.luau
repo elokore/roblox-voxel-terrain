@@ -107,9 +107,9 @@ function module.SampleVoxelCorners(voxel: vector, voxelSize: number, terrainPos:
         local samplePos: vector = sphereToOctahedral(cornerPos, planetRadius) * 1 / 800 --octrahedralProjection(cornerPos, planetRadius) * 1 / 500
         local continentalness: number = sampleNoise(samplePos, 4)
         local t: number = (continentalness + 1) / 2
-        local n: number = 1 - continentCurve:GetPositionOnCurve(t).Y.Scale
+        --local n: number = 1 - continentCurve:GetPositionOnCurve(t).Y.Scale
 
-        sampleCornerBuffer[i] = planetRadius - vector.magnitude(cornerPos) + n * 500
+        sampleCornerBuffer[i] = planetRadius - vector.magnitude(cornerPos) + continentalness * 500
     end
 
     return sampleCornerBuffer
