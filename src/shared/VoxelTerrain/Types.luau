@@ -1,6 +1,6 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
+local GeometryContainer = require(script.Parent.GeometryContainer)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 
 type Promise<T...> = Promise.TypedPromise<T...>

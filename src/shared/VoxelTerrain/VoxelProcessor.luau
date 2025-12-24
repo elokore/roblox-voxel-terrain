@@ -2,7 +2,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local GeometryContainer = require(ReplicatedStorage.Shared.GeometryContainer)
+local GeometryContainer = require(script.Parent.GeometryContainer)
 local Helper = require(script.Parent.Helper)
 local Promise = require(ReplicatedStorage.Packages.Promise)
 local Types = require(ReplicatedStorage.Shared.VoxelTerrain.Types)
